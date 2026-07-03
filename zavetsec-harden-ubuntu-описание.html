@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZavetSec-Harden-Ubuntu v1.5 — полное описание</title>
+<style>
+/* self-contained: никаких внешних запросов. Фирменные шрифты применяются,
+   если установлены локально, иначе системные фолбэки. */
+:root{
+  --bg:#0a0d10; --panel:#0d1117; --panel2:#11161d; --line:#1d2733;
+  --txt:#c9d4de; --dim:#7d8b99; --grn:#00ff88; --grn2:#00cc6a;
+  --yel:#ffcc44; --red:#ff5566; --blu:#4db8ff; --pur:#c792ea;
+  --mono:'JetBrains Mono',ui-monospace,'Cascadia Mono',Consolas,Menlo,monospace;
+  --disp:'Rajdhani','Bahnschrift','Arial Narrow',sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:var(--mono);
+  font-size:14px;line-height:1.65;position:relative;overflow-x:hidden}
+/* scanline overlay */
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;
+  background:repeating-linear-gradient(0deg,transparent 0 2px,rgba(0,0,0,.12) 2px 4px)}
+/* radial glow */
+body::after{content:'';position:fixed;top:-30vh;left:50%;transform:translateX(-50%);
+  width:120vw;height:80vh;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse at center,rgba(0,255,136,.06),transparent 60%)}
+.wrap{max-width:1060px;margin:0 auto;padding:36px 26px 80px;position:relative;z-index:1}
+
+h1,h2,h3{font-family:var(--disp);letter-spacing:.05em;line-height:1.2}
+h1{font-size:34px;color:#fff;margin:8px 0 4px}
+h2{font-size:23px;color:var(--grn);margin:0 0 14px;display:flex;align-items:center;gap:14px}
+h3{font-size:17px;color:#e8eef4;margin:22px 0 8px}
+a{color:var(--grn2);text-decoration:none}
+code{font-family:var(--mono);background:#0f1722;border:1px solid var(--line);
+  padding:1px 6px;border-radius:4px;color:#9be8c0;font-size:.92em;white-space:nowrap}
+strong{color:#e8eef4}
+
+/* header */
+.hdr{border:1px solid var(--grn2);border-radius:10px;padding:26px 30px;
+  background:linear-gradient(180deg,#0d1510,#0d1117 70%);position:relative;overflow:hidden}
+.hdr .brand{font-family:var(--disp);letter-spacing:.22em;color:var(--grn2);font-size:13px}
+.hdr .ver{display:inline-block;margin-left:10px;border:1px solid var(--grn2);border-radius:4px;
+  padding:1px 8px;color:var(--grn);font-size:12px;letter-spacing:.08em}
+.hdr p.sub{color:var(--dim);margin:8px 0 0;max-width:760px}
+.status{display:flex;gap:26px;margin-top:18px;flex-wrap:wrap}
+.status .it{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:12px;letter-spacing:.06em}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--grn);box-shadow:0 0 8px var(--grn);
+  animation:pulse 1.8s infinite}
+.dot.y{background:var(--yel);box-shadow:0 0 8px var(--yel);animation-delay:.4s}
+.dot.b{background:var(--blu);box-shadow:0 0 8px var(--blu);animation-delay:.9s}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.dot{animation:none}}
+
+/* sections */
+section{margin-top:44px}
+.num{font-family:var(--disp);font-size:15px;color:var(--bg);background:var(--grn);
+  border-radius:4px;padding:1px 9px;letter-spacing:.05em}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px 22px;margin:12px 0}
+
+/* matrix tables */
+table{width:100%;border-collapse:collapse;margin:12px 0;background:var(--panel);
+  border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:13px}
+th{font-family:var(--disp);letter-spacing:.08em;text-align:left;color:var(--grn);
+  background:#0f1520;padding:9px 12px;border-bottom:1px solid var(--grn2);font-size:13px}
+td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#101823}
+td.c,th.c{text-align:center}
+.on{color:var(--grn)} .off{color:var(--dim)} .kept{color:var(--blu)}
+
+/* badges */
+.tag{display:inline-block;font-size:11px;font-family:var(--disp);letter-spacing:.09em;
+  border-radius:3px;padding:1px 7px;margin-right:4px;vertical-align:1px}
+.t-high{background:#2a1216;color:var(--red);border:1px solid #5c2430}
+.t-med{background:#2a2312;color:var(--yel);border:1px solid #5c5024}
+.t-low{background:#122a1c;color:var(--grn);border:1px solid #245c3a}
+.t-opt{background:#12202a;color:var(--blu);border:1px solid #24455c}
+.t-pass{background:#122a1c;color:var(--grn);border:1px solid #245c3a}
+.t-fail{background:#2a1216;color:var(--red);border:1px solid #5c2430}
+.t-warn{background:#2a2312;color:var(--yel);border:1px solid #5c5024}
+.t-skip{background:#1a1f26;color:var(--dim);border:1px solid #2a3542}
+
+/* code blocks */
+pre{background:#0c1219;border:1px solid var(--line);border-left:3px solid var(--grn2);
+  border-radius:6px;padding:14px 18px;overflow-x:auto;font-size:13px;line-height:1.6}
+pre .cm{color:#5d6b79} pre .k{color:var(--grn)} pre .p{color:var(--blu)} pre .s{color:var(--yel)}
+
+/* alert boxes */
+.alert{border:1px solid #5c2430;border-left:4px solid var(--red);background:#160d10;
+  border-radius:6px;padding:14px 18px;margin:14px 0}
+.alert h4{margin:0 0 6px;font-family:var(--disp);color:var(--red);letter-spacing:.06em;font-size:15px}
+.note{border:1px solid #24455c;border-left:4px solid var(--blu);background:#0d1218;
+  border-radius:6px;padding:14px 18px;margin:14px 0}
+.note h4{margin:0 0 6px;font-family:var(--disp);color:var(--blu);letter-spacing:.06em;font-size:15px}
+.ok{border:1px solid #245c3a;border-left:4px solid var(--grn);background:#0d1510;
+  border-radius:6px;padding:14px 18px;margin:14px 0}
+.ok h4{margin:0 0 6px;font-family:var(--disp);color:var(--grn);letter-spacing:.06em;font-size:15px}
+
+ul{padding-left:22px;margin:8px 0}
+li{margin:5px 0}
+.flow{color:var(--grn2);white-space:pre;font-size:13px;line-height:1.5}
+.mod{border:1px solid var(--line);border-radius:8px;margin:14px 0;overflow:hidden}
+.mod .mh{display:flex;align-items:center;gap:12px;background:#0f1520;
+  padding:10px 16px;border-bottom:1px solid var(--line)}
+.mod .mh .mn{font-family:var(--disp);color:var(--grn);font-size:16px;letter-spacing:.08em}
+.mod .mh .mk{color:var(--dim);font-size:12px}
+.mod .mb{padding:14px 18px}
+footer{margin-top:60px;color:var(--dim);font-size:12px;text-align:center;letter-spacing:.06em}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ============================== HEADER ============================== -->
+<div class="hdr">
+  <div class="brand">ZAVETSEC // DEFENSIVE TOOLING</div>
+  <h1>ZavetSec-Harden-Ubuntu <span class="ver">v1.5-ubuntu</span></h1>
+  <p class="sub">Однофайловый инструмент харденинга и compliance-аудита для Ubuntu 20.04 / 22.04 / 24.04.
+  Один Bash-скрипт, ноль зависимостей: детектирует хост, подбирает профиль под роль,
+  проверяет соответствие базлайну или приводит систему к нему — с бэкапом каждого изменения
+  и откатом одной командой.</p>
+  <div class="status">
+    <div class="it"><span class="dot"></span>DRY-RUN ПО УМОЛЧАНИЮ</div>
+    <div class="it"><span class="dot y"></span>BACKUP + ROLLBACK</div>
+    <div class="it"><span class="dot b"></span>11 МОДУЛЕЙ · 90+ ПРОВЕРОК</div>
+  </div>
+</div>
+
+<!-- ============================== 01 ============================== -->
+<section>
+<h2><span class="num">01</span> ЧТО ЭТО И ЗАЧЕМ</h2>
+<div class="panel">
+<p>Большинство скриптов харденинга пытаются поддерживать все дистрибутивы сразу, обрастают
+непротестированными ветками совместимости и в итоге им страшно давать root. Этот инструмент
+устроен наоборот: <strong>только Ubuntu, с учётом роли машины, сначала аудит — потом изменения</strong>.</p>
+<p>Скрипт знает release-специфичные ловушки Ubuntu и обходит их автоматически:</p>
+<ul>
+<li>алгоритм <code>yescrypt</code> существует только с 22.04 — на 20.04 используется SHA512 с настроенными rounds;</li>
+<li><code>pam_faillock</code> требует PAM ≥ 1.4 — на 20.04 его физически нет, и скрипт отказывается ломать PAM-стек;</li>
+<li>sshd 8.2 на focal не знает опцию <code>KbdInteractiveAuthentication</code> — используется старое имя;</li>
+<li>cloud-образы содержат <code>50-cloud-init.conf</code>, который перебивает неаккуратно названные drop-in'ы —
+наш конфиг называется <code>00-…</code> и выигрывает при семантике «первое совпадение побеждает»;</li>
+<li>штатный ufw на noble при каждом старте активно сбрасывает <code>log_martians=0</code> —
+скрипт правит его собственный sysctl-файл по месту.</li>
+</ul>
+<p>Каждый релиз прогоняется на реальных виртуальных машинах через полный цикл
+<code>apply → reboot → audit → rollback → apply</code>. Именно так были найдены и исправлены баги,
+которые никогда не поймал бы статический анализ.</p>
+</div>
+</section>
+
+<!-- ============================== 02 ============================== -->
+<section>
+<h2><span class="num">02</span> РЕЖИМЫ РАБОТЫ</h2>
+<table>
+<tr><th>Режим</th><th>Флаг</th><th class="c">Root</th><th class="c">Меняет систему</th><th>Что даёт</th></tr>
+<tr><td>Детект</td><td><code>--detect-only</code></td><td class="c">желателен</td><td class="c off">нет</td>
+<td>Сводка: версия Ubuntu, init, контейнер, firewall, MAC, GUI, SSH-порты, роль</td></tr>
+<tr><td>Аудит</td><td><code>--audit</code> / <code>--check</code></td><td class="c">нужен для полноты</td><td class="c off">нет</td>
+<td>Проверка живой системы против базлайна + TXT и HTML отчёты со score</td></tr>
+<tr><td>Dry-run</td><td><em>(по умолчанию)</em></td><td class="c">желателен</td><td class="c off">нет</td>
+<td>Полный список того, что сделал бы apply — включая каждое действие firewall и сервисов</td></tr>
+<tr><td>Применение</td><td><code>--apply</code></td><td class="c on">обязателен</td><td class="c on">да</td>
+<td>Приведение к базлайну: бэкап каждого файла, rollback-скрипт, журнал изменений</td></tr>
+</table>
+<div class="note"><h4>ЗАПУСК БЕЗ ROOT</h4>
+Детект и частичный аудит работают без root, но проверки sshd/ufw/AppArmor уходят в SKIP,
+и оба формата отчёта выводят заметное предупреждение «NON-ROOT AUDIT — SCORE IS UNRELIABLE»,
+чтобы неполный балл никого не ввёл в заблуждение.</div>
+</section>
+
+<!-- ============================== 03 ============================== -->
+<section>
+<h2><span class="num">03</span> ЖИЗНЕННЫЙ ЦИКЛ ЗАПУСКА</h2>
+<div class="panel"><div class="flow">детект хоста ──▶ выбор профиля ──▶ аудит (read-only, отчёт со score)
+                                       │
+                                       ▼
+                             apply (бэкап каждого изменения)
+                                       │
+                                       ▼
+                             rollback (одна команда, полный откат прогона)</div></div>
+<p>Детект определяет: дистрибутив и версию (20.04/22.04/24.04), init-систему, признак контейнера,
+firewall-бэкенд и его активность (SIGPIPE-безопасно), MAC (AppArmor), наличие GUI,
+живые SSH-порты (из конфига <em>и</em> из <code>ss</code>, с корректным разбором IPv6-адресов),
+socket-активацию <code>ssh.socket</code> на 24.04 и роль машины. Роль выводится автоматически:
+контейнер → <code>container-host</code>; есть GUI → <code>workstation</code>; работает
+dockerd/kubelet → сервер повышается до <code>container-host</code>; иначе → <code>server</code>.
+Роль можно переопределить флагом <code>--role</code>, профиль — флагом <code>--profile</code>.</p>
+</section>
+
+<!-- ============================== 04 ============================== -->
+<section>
+<h2><span class="num">04</span> ПРОФИЛИ</h2>
+<p>Профиль — это набор переменных <code>ZS_*</code> поверх базового <code>defaults</code>.
+Каждый кодирует осознанные компромиссы роли: контейнерному хосту нужен IP-forwarding и
+нельзя трогать firewall; рабочей станции нужны печать, apport и съёмные носители.</p>
+<table>
+<tr><th>Параметр</th><th class="c">defaults</th><th class="c">server</th><th class="c">workstation</th><th class="c">container-host</th></tr>
+<tr><td>Firewall default-deny</td><td class="c off">выкл</td><td class="c on">вкл</td><td class="c on">вкл</td><td class="c off">выкл (правила у runtime)</td></tr>
+<tr><td>IP forwarding</td><td class="c off">выкл</td><td class="c off">выкл</td><td class="c off">выкл</td><td class="c kept">вкл (обязателен)</td></tr>
+<tr><td>ptrace_scope</td><td class="c">1</td><td class="c">2</td><td class="c">1</td><td class="c">1</td></tr>
+<tr><td>Непривилегированный eBPF</td><td class="c off">выкл</td><td class="c off">выкл</td><td class="c kept">оставлен</td><td class="c kept">оставлен (CNI/Cilium)</td></tr>
+<tr><td>usb-storage</td><td class="c kept">оставлен</td><td class="c off">отключён</td><td class="c kept">оставлен</td><td class="c off">отключён</td></tr>
+<tr><td>Модуль filesystem</td><td class="c on">вкл</td><td class="c on">вкл</td><td class="c on">вкл</td><td class="c off">выкл (overlayfs)</td></tr>
+<tr><td>apport</td><td class="c off">отключён</td><td class="c off">отключён</td><td class="c kept">оставлен</td><td class="c off">отключён</td></tr>
+<tr><td>cups / avahi</td><td class="c">—</td><td class="c off">отключены</td><td class="c kept">оставлены</td><td class="c off">отключены</td></tr>
+<tr><td>PermitRootLogin</td><td class="c">prohibit-password</td><td class="c on">no</td><td class="c on">no</td><td class="c on">no</td></tr>
+<tr><td>MaxSessions</td><td class="c">4</td><td class="c">2</td><td class="c">4</td><td class="c">4</td></tr>
+<tr><td>Автообновления безопасности</td><td class="c on">вкл</td><td class="c on">вкл</td><td class="c on">вкл</td><td class="c on">вкл</td></tr>
+</table>
+<div class="note"><h4>ПОЧЕМУ ТАК</h4>
+Docker публикует порты собственными nftables-правилами <strong>в обход ufw</strong> — поэтому на
+container-host модуль firewall намеренно выключен, а скрипт предупреждает об этом.
+<code>MaxSessions 4</code> вне серверов — тоже намеренно: значение 2 ломает SSH-мультиплексирование
+(ControlMaster) и VS Code Remote.</div>
+</section>
+
+<!-- ============================== 05 ============================== -->
+<section>
+<h2><span class="num">05</span> МОДУЛИ — ЧТО ИМЕННО ДЕЛАЕТ КАЖДЫЙ</h2>
+<p>Одиннадцать модулей в порядке выполнения. Любой можно запустить отдельно
+(<code>--only ssh,firewall</code>) или исключить (<code>--skip firewall</code>).
+У каждого enforcement-модуля есть audit-зеркало с тем же базлайном — список FAIL из аудита
+это в точности то, что исправит apply.</p>
+
+<div class="mod"><div class="mh"><span class="num">1</span><span class="mn">SYSCTL-KERNEL</span><span class="mk">защита ядра</span></div><div class="mb">
+<p>Пишет собственный файл в <code>/etc/sysctl.d/</code> и применяет <code>sysctl --system</code>.
+Каждый ключ:</p>
+<table>
+<tr><th>Ключ</th><th class="c">Значение</th><th>Что даёт</th></tr>
+<tr><td><code>kernel.kptr_restrict</code></td><td class="c">2</td><td>адреса ядра в /proc скрыты даже от root-процессов без CAP_SYSLOG — усложняет разработку эксплойтов, которым нужны смещения</td></tr>
+<tr><td><code>kernel.dmesg_restrict</code></td><td class="c">1</td><td>буфер ядра (dmesg) только привилегированным — в нём утекают адреса и детали железа</td></tr>
+<tr><td><code>kernel.printk</code></td><td class="c">3 3 3 3</td><td>консоль не заливается сообщениями ядра — меньше утечек на физическом терминале</td></tr>
+<tr><td><code>kernel.kexec_load_disabled</code></td><td class="c">1</td><td>запрет kexec — нельзя подменить работающее ядро на своё без перезагрузки (необратимо до ребута)</td></tr>
+<tr><td><code>kernel.sysrq</code></td><td class="c">0</td><td>магические SysRq-комбинации выключены — с клавиатуры/консоли нельзя убить процессы или сдампить память</td></tr>
+<tr><td><code>kernel.perf_event_paranoid</code></td><td class="c">3</td><td>perf-события только root — закрывает целый класс side-channel и infoleak-техник</td></tr>
+<tr><td><code>kernel.randomize_va_space</code></td><td class="c">2</td><td>полный ASLR, включая brk — рандомизация адресного пространства против ROP-эксплойтов</td></tr>
+<tr><td><code>kernel.yama.ptrace_scope</code></td><td class="c">1 / 2</td><td>отладка чужих процессов запрещена (1 — только потомков; 2 на server — только с CAP_SYS_PTRACE): защита от кражи секретов из памяти соседних процессов</td></tr>
+<tr><td><code>kernel.unprivileged_bpf_disabled</code></td><td class="c">1</td><td>eBPF только привилегированным — исторически богатый источник LPE-уязвимостей (не ставится на workstation/container-host)</td></tr>
+<tr><td><code>net.core.bpf_jit_harden</code></td><td class="c">2</td><td>JIT-компилятор BPF с ослеплением констант — против JIT-spray; безопасен даже при включённом BPF</td></tr>
+<tr><td><code>dev.tty.ldisc_autoload</code></td><td class="c">0</td><td>запрет автозагрузки line disciplines TTY — закрывает старый вектор LPE через экзотические ldisc-модули</td></tr>
+<tr><td><code>kernel.core_uses_pid</code></td><td class="c">1</td><td>PID в имени core-файла — дампы не перезаписывают друг друга</td></tr>
+<tr><td><code>fs.protected_hardlinks</code></td><td class="c">1</td><td>hardlink на чужой файл только при доступе к нему — против классических атак через ссылки в /tmp</td></tr>
+<tr><td><code>fs.protected_symlinks</code></td><td class="c">1</td><td>symlink в sticky-каталогах следуется только при совпадении владельца — против symlink race</td></tr>
+<tr><td><code>fs.protected_fifos</code></td><td class="c">2</td><td>запрет открытия чужих FIFO в sticky-каталогах — против подсовывания именованных каналов</td></tr>
+<tr><td><code>fs.protected_regular</code></td><td class="c">2</td><td>то же для обычных файлов при O_CREAT — против data spoofing в /tmp</td></tr>
+<tr><td><code>fs.suid_dumpable</code></td><td class="c">0</td><td>suid-программы не оставляют core-дампов (в них — содержимое привилегированной памяти). <strong>Только если apport отключён профилем</strong>: живой apport сам ставит 2 при каждой загрузке, и на workstation аудит честно показывает SKIP «apport-managed»</td></tr>
+</table>
+<p><span class="tag t-opt">НЕ ТРОГАЕТ</span> user namespaces — их отключение ломает snap, rootless-контейнеры и песочницы браузеров.</p>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">2</span><span class="mn">SYSCTL-NETWORK</span><span class="mk">сетевой стек</span></div><div class="mb">
+<table>
+<tr><th>Ключ (all + default)</th><th class="c">Значение</th><th>Что даёт</th></tr>
+<tr><td><code>net.ipv4.conf.*.rp_filter</code></td><td class="c">1</td><td>reverse-path filter: пакет с адресом источника, недостижимым через входной интерфейс, отбрасывается — базовый антиспуфинг</td></tr>
+<tr><td><code>net.ipv4.conf.*.accept_redirects</code><br><code>net.ipv6.conf.*.accept_redirects</code></td><td class="c">0</td><td>ICMP-редиректы игнорируются — сосед по сети не может перенаправить ваш трафик через себя (MITM)</td></tr>
+<tr><td><code>net.ipv4.conf.*.secure_redirects</code></td><td class="c">0</td><td>то же даже от «доверенных» шлюзов — шлюз тоже может быть скомпрометирован</td></tr>
+<tr><td><code>net.ipv4.conf.*.send_redirects</code></td><td class="c">0</td><td>хост сам не рассылает редиректы — не участвует в перенаправлении чужого трафика</td></tr>
+<tr><td><code>net.ipv4.conf.*.accept_source_route</code><br><code>net.ipv6.conf.*.accept_source_route</code></td><td class="c">0</td><td>source routing запрещён — отправитель не может продиктовать маршрут пакета через вашу сеть</td></tr>
+<tr><td><code>net.ipv4.conf.*.log_martians</code></td><td class="c">1</td><td>пакеты с невозможными адресами логируются — индикатор сканирования/спуфинга. Значения, которые noble-овский ufw сбрасывает в 0, модуль firewall правит в самом ufw</td></tr>
+<tr><td><code>net.ipv4.icmp_echo_ignore_broadcasts</code></td><td class="c">1</td><td>игнор ping на broadcast — защита от участия в smurf-амплификации</td></tr>
+<tr><td><code>net.ipv4.icmp_ignore_bogus_error_responses</code></td><td class="c">1</td><td>мусорные ICMP-ошибки не засоряют лог</td></tr>
+<tr><td><code>net.ipv4.tcp_syncookies</code></td><td class="c">1</td><td>SYN cookies — сервер остаётся доступным под SYN-flood</td></tr>
+<tr><td><code>net.ipv4.tcp_rfc1337</code></td><td class="c">1</td><td>защита от TIME-WAIT assassination — RST не убивает сокеты в TIME-WAIT</td></tr>
+<tr><td><code>net.ipv6.conf.*.accept_ra</code></td><td class="c">0</td><td>на серверных профилях Router Advertisement игнорируются — rogue-RA не навяжет маршрут/адрес (workstation с SLAAC не трогается)</td></tr>
+<tr><td><code>net.ipv4.ip_forward</code><br><code>net.ipv6.conf.*.forwarding</code></td><td class="c">0 / 1</td><td>форвардинг выключен — хост не работает роутером; <strong>на container-host принудительно 1</strong>, иначе контейнеры теряют сеть</td></tr>
+<tr><td><code>net.ipv6.conf.*.disable_ipv6</code></td><td class="c"><span class="tag t-opt">OPT-IN</span></td><td>полное отключение IPv6 — только по явному <code>ZS_TUNE_DISABLE_IPV6=1</code>: на машинах с рабочим v6 это обрыв связности</td></tr>
+</table>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">3</span><span class="mn">SSH</span><span class="mk">анти-локаут по построению</span></div><div class="mb">
+<p>Пишет drop-in <code>/etc/ssh/sshd_config.d/00-zavetsec-harden.conf</code>. Имя с <code>00-</code> —
+принципиально: sshd работает по правилу «первое совпадение побеждает», и файл с большим номером
+молча проигрывает <code>50-cloud-init.conf</code> на любом облачном образе.</p>
+<p>Каждая директива drop-in'а:</p>
+<table>
+<tr><th>Директива</th><th class="c">Значение</th><th>Зачем</th></tr>
+<tr><td><code>PermitRootLogin</code></td><td class="c">no / prohibit-password</td><td>root по паролю — главная мишень брутфорса; на именованных профилях root-вход закрыт полностью</td></tr>
+<tr><td><code>PasswordAuthentication</code></td><td class="c">yes → no <span class="tag t-opt">OPT-IN</span></td><td>отключается только по <code>SSH_DISABLE_PASSWORD=1</code> и <strong>только если найдены authorized_keys</strong> — иначе это самолокаут</td></tr>
+<tr><td><code>PermitEmptyPasswords</code></td><td class="c">no</td><td>аккаунты с пустым паролем не могут войти по SSH</td></tr>
+<tr><td><code>KbdInteractiveAuthentication</code></td><td class="c">no</td><td>закрывает обходной канал парольного входа; на focal пишется старым именем <code>ChallengeResponseAuthentication</code></td></tr>
+<tr><td><code>MaxAuthTries</code></td><td class="c">3</td><td>три попытки на соединение — брутфорс дороже, легитимный пользователь не страдает</td></tr>
+<tr><td><code>MaxSessions</code></td><td class="c">2 / 4</td><td>лимит мультиплексированных сессий; 4 вне серверов — чтобы не ломать ControlMaster и VS Code Remote</td></tr>
+<tr><td><code>LoginGraceTime</code></td><td class="c">30</td><td>полминуты на аутентификацию — зависшие полусоединения не копятся</td></tr>
+<tr><td><code>ClientAliveInterval / CountMax</code></td><td class="c">300 / 2</td><td>мёртвые сессии закрываются через ~10 минут — брошенные терминалы не живут вечно</td></tr>
+<tr><td><code>TCPKeepAlive</code></td><td class="c">no</td><td>keepalive на уровне TCP спуфится; контроль живости — только шифрованными ClientAlive</td></tr>
+<tr><td><code>X11Forwarding</code></td><td class="c">no</td><td>X11-канал — классический вектор с сервера на клиент</td></tr>
+<tr><td><code>AllowTcpForwarding</code></td><td class="c">no*</td><td>SSH-туннели закрыты — скомпрометированный аккаунт не станет прокси внутрь сети (*настраивается — админам туннели часто нужны)</td></tr>
+<tr><td><code>AllowAgentForwarding</code></td><td class="c">no</td><td>чужой root на сервере не сможет подписываться вашим агентом</td></tr>
+<tr><td><code>PermitUserEnvironment</code></td><td class="c">no</td><td>пользователь не может подсунуть переменные окружения (LD_PRELOAD и т.п.) до запуска шелла</td></tr>
+<tr><td><code>IgnoreRhosts / HostbasedAuthentication</code></td><td class="c">yes / no</td><td>реликтовая доверительная аутентификация r-команд отключена</td></tr>
+<tr><td><code>PermitTunnel</code></td><td class="c">no</td><td>запрет L2/L3 VPN-туннелей поверх SSH</td></tr>
+<tr><td><code>Compression</code></td><td class="c">no</td><td>сжатие до аутентификации исторически давало уязвимости; на современных каналах и не нужно</td></tr>
+<tr><td><code>LogLevel</code></td><td class="c">VERBOSE</td><td>в лог попадают отпечатки ключей — можно узнать, <em>чьим</em> ключом вошли</td></tr>
+<tr><td><code>Banner</code></td><td class="c">/etc/issue.net</td><td>юридическое предупреждение до входа</td></tr>
+<tr><td><code>KexAlgorithms</code></td><td class="c">список</td><td>sntrup761x25519 (постквантовый гибрид), curve25519, DH group16/18 — <strong>отфильтровано через <code>ssh -Q</code></strong> под фактический sshd</td></tr>
+<tr><td><code>Ciphers</code></td><td class="c">список</td><td>chacha20-poly1305, AES-GCM, AES-CTR — только AEAD и CTR, никаких CBC</td></tr>
+<tr><td><code>MACs</code></td><td class="c">список</td><td>только ETM-варианты (encrypt-then-MAC): hmac-sha2-512/256-etm, umac-128-etm</td></tr>
+</table>
+<div class="ok"><h4>ГАРАНТИИ</h4>
+Перед перезагрузкой конфига выполняется <code>sshd -t</code>; при провале <strong>восстанавливается
+прежний drop-in из бэкапа</strong>, а не просто удаляется наш. Парольная аутентификация
+отключается <em>только</em> если у root или пользователей найдены authorized_keys, и только по opt-in
+<code>ZS_TUNE_SSH_DISABLE_PASSWORD=1</code>.</div>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">4</span><span class="mn">AUTH</span><span class="mk">пароли и блокировки</span></div><div class="mb">
+<table>
+<tr><th>Файл / ключ</th><th class="c">Значение</th><th>Зачем</th></tr>
+<tr><td><code>login.defs · PASS_MAX_DAYS</code></td><td class="c">365</td><td>пароль живёт максимум год — компромисс между гигиеной ротации и «людям надоест и они начнут клеить стикеры»</td></tr>
+<tr><td><code>login.defs · PASS_MIN_DAYS</code></td><td class="c">1</td><td>нельзя сменить пароль дважды за день — блокирует трюк «прокрутить историю и вернуть старый»</td></tr>
+<tr><td><code>login.defs · PASS_WARN_AGE</code></td><td class="c">14</td><td>предупреждение за две недели до истечения</td></tr>
+<tr><td><code>login.defs · UMASK</code></td><td class="c">027 / 022</td><td>новые файлы недоступны «остальным»; на workstation мягче — совместный доступ к файлам ожидаем</td></tr>
+<tr><td><code>login.defs · ENCRYPT_METHOD</code></td><td class="c">YESCRYPT / SHA512</td><td>алгоритм хэша паролей с учётом версии: yescrypt (memory-hard, GPU-стойкий) на 22.04+, SHA512 на focal, где yescrypt отсутствует</td></tr>
+<tr><td><code>login.defs · YESCRYPT_COST_FACTOR</code></td><td class="c">8</td><td>стоимость yescrypt (дефолт 5): подбор на GPU дороже на порядки, логин медленнее на доли секунды</td></tr>
+<tr><td><code>login.defs · SHA_CRYPT_MIN/MAX_ROUNDS</code></td><td class="c">10000</td><td>на focal — число раундов SHA512 вместо дефолтных 5000</td></tr>
+<tr><td><code>login.defs · FAILLOG_ENAB</code></td><td class="c">yes</td><td>учёт неудачных попыток входа</td></tr>
+<tr><td><code>pwquality.conf · minlen</code></td><td class="c">14</td><td>минимальная длина — длина бьёт сложность: 14 символов практически неперебираемы офлайн</td></tr>
+<tr><td><code>pwquality.conf · minclass</code></td><td class="c">4</td><td>все четыре класса символов (строчные/прописные/цифры/спец)</td></tr>
+<tr><td><code>faillock.conf · deny</code></td><td class="c">5</td><td>блокировка аккаунта после 5 неудач подряд</td></tr>
+<tr><td><code>faillock.conf · unlock_time</code></td><td class="c">900</td><td>авторазблокировка через 15 минут — брутфорс замедлен в сотни раз, легитимный пользователь не заперт навсегда</td></tr>
+<tr><td><code>faillock.conf · fail_interval / audit</code></td><td class="c">900 / on</td><td>окно счёта неудач + журналирование попыток с несуществующими логинами</td></tr>
+</table>
+<div class="alert"><h4><span class="tag t-opt">OPT-IN</span> ВКЛЮЧЕНИЕ FAILLOCK В PAM <span class="tag t-high">HIGH</span></h4>
+Само вплетение faillock в аутентификацию (<code>ZS_TUNE_ENABLE_FAILLOCK_PAM=1</code>) выключено
+по умолчанию — это риск локаута. При включении используется родной <code>pam-auth-update</code>
+и канонический стек <code>preauth(1025) / authfail(0) / authsucc(Additional)</code>: залоченный
+отсекается до проверки пароля, неудача считается после pam_unix, успех сбрасывает счётчик.
+На 20.04, где pam_faillock отсутствует, скрипт <strong>отказывается</strong> включать wiring вместо
+записи нерабочего PAM-стека. Держите второй root-сеанс открытым и проверяйте с отдельной сессии.</div>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">5</span><span class="mn">FIREWALL</span><span class="mk">ufw default-deny</span></div><div class="mb">
+<p>Порядок анти-локаутный: сначала <code>allow</code> на каждый обнаруженный SSH-порт
+(из конфига и из живых сокетов), затем default-deny входящих, allow исходящих,
+логирование — и только потом <code>ufw --force enable</code>. Loopback и established-соединения
+ufw сохраняет сам.</p>
+<ul>
+<li>если ufw был активен <em>до</em> запуска — его правила снапшотятся в бэкап, и rollback вернёт именно их, а не выключит firewall;</li>
+<li>активные строки <code>log_martians=0</code>, которые noble шипит в <code>/etc/ufw/sysctl.conf</code>,
+исправляются <strong>по месту</strong> (append в конец не помогает — ufw применяет этот файл при каждом старте);</li>
+<li>после <code>ufw enable</code> повторно выполняется <code>sysctl --system</code>, чтобы значения из
+<code>/etc/sysctl.d</code> победили сразу, а не после ребута.</li>
+</ul>
+<div class="alert"><h4>DOCKER <span class="tag t-high">ВАЖНО</span></h4>
+Docker публикует порты собственными nftables-цепочками в обход ufw — на container-host модуль
+выключен профилем, фильтруйте на уровне оркестратора или cloud security groups.</div>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">6</span><span class="mn">AUDITD</span><span class="mk">журнал безопасности ядра</span></div><div class="mb">
+<p>Ставит auditd и пишет CIS/STIG-ориентированный набор правил для <strong>обеих архитектур</strong>
+(<code>arch=b64</code> и <code>arch=b32</code>), загружает через <code>augenrules --load</code> с проверкой результата. Группы правил по ключам:</p>
+<table>
+<tr><th>Ключ (-k)</th><th>Что отслеживается</th><th>Зачем</th></tr>
+<tr><td><code>auditconfig</code></td><td>записи в /etc/audit/, libaudit.conf</td><td>попытка ослепить аудит — сама по себе индикатор атаки</td></tr>
+<tr><td><code>time-change</code></td><td>adjtimex/settimeofday/clock_settime, /etc/localtime</td><td>перевод часов — способ запутать таймлайн в расследовании</td></tr>
+<tr><td><code>identity</code></td><td>passwd, shadow, group, gshadow, opasswd</td><td>создание пользователей и смена паролей — типовой шаг закрепления</td></tr>
+<tr><td><code>scope</code></td><td>/etc/sudoers, /etc/sudoers.d/</td><td>расширение sudo-привилегий</td></tr>
+<tr><td><code>system-locale</code></td><td>sethostname/setdomainname, hosts, hostname, netplan/</td><td>подмена сетевой идентичности и резолвинга</td></tr>
+<tr><td><code>MAC-policy</code></td><td>/etc/apparmor/, /etc/apparmor.d/</td><td>ослабление мандатных профилей</td></tr>
+<tr><td><code>logins / session</code></td><td>faillog, lastlog, utmp, wtmp, btmp</td><td>манипуляции журналами входов — заметание следов</td></tr>
+<tr><td><code>perm_mod</code></td><td>chmod/chown/setxattr-семейства (auid≥1000)</td><td>смена прав реальными пользователями — эскалация и закрепление</td></tr>
+<tr><td><code>access</code></td><td>open/creat/truncate с EACCES/EPERM (auid≥1000)</td><td>неудачные попытки доступа — разведка и перебор путей</td></tr>
+<tr><td><code>mounts</code></td><td>mount (auid≥1000)</td><td>монтирование пользователем — вынос данных, обход noexec</td></tr>
+<tr><td><code>delete</code></td><td>unlink/rename (auid≥1000)</td><td>удаления и переименования — уничтожение улик</td></tr>
+<tr><td><code>modules</code></td><td>insmod/rmmod/modprobe + init_module-сисколлы</td><td>загрузка модулей ядра — руткиты</td></tr>
+<tr><td><code>privileged</code></td><td>исполнение suid/sgid-бинарей системы</td><td>каждое использование привилегированной программы попадает в журнал</td></tr>
+</table>
+<p>Настраивается и сам демон: ротация журналов, поведение при заполнении диска.
+<span class="tag t-opt">OPT-IN</span> Иммутабельный режим <code>-e 2</code> (правила нельзя менять
+до ребута — даже root'у) — по флагу <code>ZS_TUNE_AUDIT_IMMUTABLE=1</code>.</p>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">7</span><span class="mn">FILESYSTEM</span><span class="mk">точки монтирования и редкие ФС</span></div><div class="mb">
+<table>
+<tr><th>Объект</th><th class="c">Действие</th><th>Зачем</th></tr>
+<tr><td><code>/dev/shm</code></td><td class="c">nodev,nosuid,noexec</td><td>общая память — любимое место для fileless-нагрузок; опции пишутся в fstab и применяются remount'ом сразу</td></tr>
+<tr><td><code>/tmp</code>, <code>/var/tmp</code></td><td class="c">рекомендация</td><td>fstab не переписывается автоматически (см. «чего не делает»); noexec на /tmp — <span class="tag t-opt">OPT-IN</span>, потому что ломает инсталляторы и часть сборок</td></tr>
+<tr><td><code>cramfs freevxfs jffs2 hfs hfsplus udf</code></td><td class="c">блэклист</td><td>редкие ФС = редко аудируемый код ядра с историей уязвимостей; блокируются через <code>install … /bin/true</code> + выгрузка. <strong>squashfs сохраняется</strong> — он нужен snap</td></tr>
+<tr><td><code>usb-storage</code></td><td class="c"><span class="tag t-opt">OPT-IN</span> (server: вкл)</td><td>USB-накопители — канал выноса данных и заноса нагрузок; на сервере физический USB легитимно нужен редко</td></tr>
+</table>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">8</span><span class="mn">SERVICES</span><span class="mk">сокращение поверхности атаки</span></div><div class="mb">
+<table>
+<tr><th>Что</th><th>Список</th><th>Зачем</th></tr>
+<tr><td>Сервисы по профилю</td><td>server: avahi-daemon, rpcbind, cups, cups-browsed, bluetooth, ModemManager · workstation: только rpcbind · container-host: avahi, rpcbind, cups, bluetooth</td><td>каждый слушающий демон — поверхность атаки; на десктопе печать/BT/mDNS оставлены — они там работа, а не риск</td></tr>
+<tr><td>Легаси-пакеты (purge)</td><td>telnetd, telnet-server, rsh-server, rsh-redone-server, talk, talkd, tftpd-hpa, xinetd, nis</td><td>протоколы с открытым текстом и доверительной аутентификацией из 90-х — им нет оправдания в 2026</td></tr>
+<tr><td>Легаси-сокеты (mask)</td><td>telnet/rsh/rlogin/rexec .socket</td><td>маскирование гарантирует, что сокет не оживёт даже при переустановке пакета</td></tr>
+<tr><td>Протоколы ядра (блэклист)</td><td>dccp, sctp, rds, tipc</td><td>неиспользуемые сетевые протоколы = неиспользуемый код ядра с CVE-историей (RDS — печально знаменит)</td></tr>
+</table>
+<p>Каждое отключение попадает в rollback с командой обратного включения.</p>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">9</span><span class="mn">EXTRAS</span><span class="mk">патчи, брутфорс, учёт</span></div><div class="mb">
+<table>
+<tr><th>Компонент</th><th>Настройка</th><th>Зачем</th></tr>
+<tr><td><code>unattended-upgrades</code></td><td><code>20auto-upgrades</code>: обновление списков и security-патчи ежедневно</td><td>автопатчинг закрывает известные CVE без участия человека — по эффекту сильнее половины sysctl вместе взятых; opt-out: <code>ZS_TUNE_AUTO_UPGRADES=0</code></td></tr>
+<tr><td><code>fail2ban</code></td><td><code>jail.local</code>: bantime 1h, findtime 10m, maxretry 5, джейл sshd включён</td><td>бан по IP после 5 неудач за 10 минут; jail.local переживает обновления пакета; <strong>существующий пользовательский jail.local не перезаписывается</strong> (распознаётся по маркеру); при откате пакет удаляется, только если его ставил этот прогон</td></tr>
+<tr><td><code>debsums</code></td><td>установка</td><td>проверка контрольных сумм установленных пакетов — детект подмены системных бинарей</td></tr>
+<tr><td><code>apt-listchanges</code></td><td>установка</td><td>видимость изменений при обновлениях</td></tr>
+<tr><td><code>needrestart</code></td><td>установка</td><td>показывает сервисы, работающие на устаревших (пропатченных на диске, но не в памяти) библиотеках</td></tr>
+<tr><td><code>libpam-tmpdir</code></td><td>установка</td><td>каждому пользователю — приватный TMPDIR: целый класс /tmp-атак исчезает</td></tr>
+<tr><td><code>acct</code></td><td>установка + enable</td><td>процессный учёт: кто что запускал — база для расследований</td></tr>
+<tr><td><code>sysstat</code></td><td><code>ENABLED="true"</code> + enable сервиса</td><td>исторические метрики (sar) — аномалии нагрузки видны ретроспективно</td></tr>
+</table>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">10</span><span class="mn">APPARMOR</span><span class="mk">мандатный контроль</span></div><div class="mb">
+<p>Убеждается, что AppArmor установлен и включён, считает профили в complain-режиме и сообщает
+о них. <strong>Никогда не переводит профили в enforce вслепую</strong> — это ломает приложения
+непредсказуемо; перевод конкретных профилей остаётся осознанным решением администратора
+(<code>aa-enforce</code> точечно).</p>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">11</span><span class="mn">MISC</span><span class="mk">всё остальное важное</span></div><div class="mb">
+<table>
+<tr><th>Настройка</th><th class="c">Значение</th><th>Зачем</th></tr>
+<tr><td>Core dumps (limits)</td><td class="c"><code>* hard core 0</code></td><td>дампы содержат память процессов — пароли, ключи, токены</td></tr>
+<tr><td>systemd coredump.conf</td><td class="c">Storage=none, ProcessSizeMax=0</td><td>systemd-coredump обходит ulimit — закрывается отдельно</td></tr>
+<tr><td>apport</td><td class="c">off (server)</td><td>crash-репортер собирает дампы и метаданные; на серверах не нужен, на workstation сознательно оставлен</td></tr>
+<tr><td>Баннеры issue / issue.net</td><td class="c">предупреждение</td><td>юридическая фиксация «доступ только авторизованным» до входа</td></tr>
+<tr><td>cron.allow / at.allow</td><td class="c">600, только root <span class="tag t-med">MED</span></td><td>планировщики — классика закрепления; allow-list вместо deny-list. Скрипт явно предупреждает: обычные пользователи теряют cron, пока их не впишут</td></tr>
+<tr><td>Каталоги cron.*</td><td class="c">go-rwx</td><td>содержимое заданий не читается непривилегированными — меньше разведданных</td></tr>
+<tr><td><code>ctrl-alt-del.target</code></td><td class="c">masked</td><td>случайный/злонамеренный ребут с консоли невозможен</td></tr>
+<tr><td>sudo: <code>Defaults use_pty</code></td><td class="c">on</td><td>sudo всегда в собственном PTY — защита от захвата управляющего терминала фоновым процессом</td></tr>
+<tr><td>sudo: <code>Defaults logfile</code></td><td class="c">/var/log/sudo.log</td><td>след sudo-команд, независимый от syslog. Файл проверяется <code>visudo -c</code> и <strong>мгновенно удаляется при отказе валидатора</strong> — сломать sudo этим модулем невозможно</td></tr>
+<tr><td><code>/etc/shadow</code></td><td class="c">640 root:shadow</td><td>хэши паролей — только root и группе shadow</td></tr>
+<tr><td><code>/etc/passwd</code>, <code>/etc/group</code></td><td class="c">644</td><td>канонические права — не жёстче (их читают легитимные программы), не мягче</td></tr>
+<tr><td><code>/etc/sudoers.d</code></td><td class="c">750</td><td>правила sudo не читаются непривилегированными</td></tr>
+<tr><td><code>/etc/ssh/sshd_config</code></td><td class="c">600</td><td>конфиг SSH — только root</td></tr>
+</table>
+</div></div>
+</section>
+
+<!-- ============================== 06 ============================== -->
+<section>
+<h2><span class="num">06</span> МЕХАНИКА БЕЗОПАСНОСТИ</h2>
+<div class="panel">
+<ul>
+<li><strong>Dry-run по умолчанию.</strong> Без <code>--apply</code> система не меняется, а вывод
+показывает <em>каждое</em> действие — включая команды ufw и systemctl (строки <code>would run:</code>).</li>
+<li><strong>Бэкап перед каждым изменением.</strong> Оригиналы копируются в
+<code>state-dir/backup</code> с сохранением путей. Аудит и dry-run не создают ни state dir,
+ни пустых rollback-файлов — вообще ничего.</li>
+<li><strong>Идемпотентность с верификацией.</strong> Повторный запуск безопасен (сплошные
+<code>already</code>); каждая правка файла проверяется после записи — неудача даёт громкий
+<code>ERR</code>, а не ложный <code>OK</code>. Закомментированные строки (включая документацию
+в login.defs) никогда не переписываются.</li>
+<li><strong>Подтверждение apply.</strong> На интерактивном терминале запрашивается явное
+<code>YES</code>; в CI/автоматизации подтверждение пропускается.</li>
+<li><strong>Не-Ubuntu отклоняется</strong> без флага <code>--force</code>; деривативы (Mint, Pop!_OS)
+допускаются с предупреждением.</li>
+</ul>
+</div>
+<div class="alert"><h4>ПЕРВЫЙ УДАЛЁННЫЙ APPLY</h4>
+Всегда держите второй root-сеанс открытым при первом <code>--apply</code> на удалённой машине —
+несмотря на все гарантии. Проверка нового SSH-подключения сразу после применения обязательна.</div>
+</section>
+
+<!-- ============================== 07 ============================== -->
+<section>
+<h2><span class="num">07</span> АУДИТ И ОТЧЁТЫ</h2>
+<p>Аудит читает <strong>живое состояние системы</strong>, а не только конфиги: ядро через
+<code>sysctl -n</code>, эффективный конфиг SSH через <code>sshd -T</code> (то, что демон реально
+применил после всех drop-in'ов), <code>ufw status</code>, <code>aa-status</code>,
+<code>auditctl -l</code>, опции монтирования через <code>findmnt</code>, реальные права через
+<code>stat</code>, состояние сервисов и пакетов.</p>
+<p>Каждая проверка получает статус и важность:</p>
+<p>
+<span class="tag t-pass">PASS</span> соответствует базлайну&nbsp;&nbsp;
+<span class="tag t-fail">FAIL</span> расхождение — apply исправит&nbsp;&nbsp;
+<span class="tag t-warn">WARN</span> требует внимания, но не однозначный дефект&nbsp;&nbsp;
+<span class="tag t-skip">SKIP</span> неприменимо/нет прав — с причиной в note
+</p>
+<p>
+<span class="tag t-high">HIGH</span> критично для безопасности&nbsp;&nbsp;
+<span class="tag t-med">MED</span> важно&nbsp;&nbsp;
+<span class="tag t-low">LOW</span> желательно
+</p>
+<p>Score = PASS / (PASS + FAIL). Отчёты пишутся в текущий каталог
+(<code>--report-dir</code> меняет) в двух форматах (<code>--format txt|html|both</code>):</p>
+<ul>
+<li><strong>TXT</strong> — по категориям, итоговая строка, явный список провалов с готовой
+командой исправления. Удобен для логов, cron и diff между прогонами.</li>
+<li><strong>HTML</strong> — самодостаточная страница: шкала compliance, счётчики
+PASS/FAIL/WARN/SKIP, красная панель провалов «ожидалось vs есть», таблицы по категориям
+с бейджами важности, живой фильтр-поиск. <strong>Ни одного внешнего запроса</strong> —
+отчёт аудита не имеет права «звонить домой».</li>
+</ul>
+<p>Контекст отражается честно: на workstation, где apport оставлен намеренно,
+<code>fs.suid_dumpable</code> показывается как SKIP «apport-managed», а не ложный FAIL.</p>
+</section>
+
+<!-- ============================== 08 ============================== -->
+<section>
+<h2><span class="num">08</span> ROLLBACK — ЧТО ОТКАТЫВАЕТ И ЧТО НЕТ</h2>
+<p>Каждый <code>--apply</code> создаёт каталог <code>/var/log/zavetsec-harden/&lt;метка&gt;/</code>
+с бэкапами, журналом, списком изменений и скриптом отката:</p>
+<pre><span class="k">sudo</span> bash /var/log/zavetsec-harden/&lt;метка&gt;/rollback.sh</pre>
+<p>Он восстанавливает файлы из бэкапа, включает обратно отключённые/замаскированные сервисы,
+откатывает изменения ufw/sysctl/PAM этого прогона, затем выполняет <code>sysctl --system</code>
+и печатает честное резюме. Границы отката — скрипт сам о них сообщает:</p>
+<ul>
+<li><strong>Rollback — per-run.</strong> Каждый rollback.sh откатывает ровно изменения <em>своего</em>
+apply. Применяли несколько раз — запускайте содержательные rollback'и от нового к старому.</li>
+<li><strong>Runtime живёт до ребута.</strong> Удаление sysctl-файла не сбрасывает значения в ядре,
+загруженные audit-правила остаются загруженными — для полного отката нужен reboot.</li>
+<li><strong>Пакеты остаются намеренно.</strong> auditd, unattended-upgrades, sysstat не удаляются
+(удалять средства безопасности за спиной — хуже); исключение — fail2ban, который убирается,
+если его ставил именно откатываемый прогон.</li>
+<li><strong>Прежний ufw восстанавливается, а не выключается.</strong> Если firewall был активен до
+запуска, откат вернёт ваши прежние правила.</li>
+</ul>
+</section>
+
+<!-- ============================== 09 ============================== -->
+<section>
+<h2><span class="num">09</span> КЛЮЧЕВЫЕ ТЮНЫ</h2>
+<p>Все параметры — переменные в функции <code>load_profile</code>; их можно менять в профиле
+или передавать окружением. Основные:</p>
+<table>
+<tr><th>Переменная</th><th>По умолчанию</th><th>Что делает</th></tr>
+<tr><td><code>ZS_ENABLE_&lt;МОДУЛЬ&gt;</code></td><td>по профилю</td><td>вкл/выкл любого из 11 модулей</td></tr>
+<tr><td><code>ZS_TUNE_PASS_MAX_DAYS</code></td><td>365</td><td>максимальный срок жизни пароля</td></tr>
+<tr><td><code>ZS_TUNE_UMASK</code></td><td>027</td><td>umask по умолчанию (022 на workstation)</td></tr>
+<tr><td><code>ZS_TUNE_YESCRYPT_COST</code> / <code>SHA_ROUNDS</code></td><td>8 / 10000</td><td>стоимость хэширования паролей</td></tr>
+<tr><td><code>ZS_TUNE_PWQ_MINLEN</code> / <code>MINCLASS</code></td><td>14 / 4</td><td>требования к сложности пароля</td></tr>
+<tr><td><code>ZS_TUNE_ENABLE_FAILLOCK_PAM</code></td><td>0 <span class="tag t-opt">OPT-IN</span></td><td>вплетение faillock в PAM-стек</td></tr>
+<tr><td><code>ZS_TUNE_SSH_PERMIT_ROOT</code></td><td>по профилю</td><td>PermitRootLogin</td></tr>
+<tr><td><code>ZS_TUNE_SSH_DISABLE_PASSWORD</code></td><td>0 <span class="tag t-opt">OPT-IN</span></td><td>отключить парольный SSH (только при наличии ключей)</td></tr>
+<tr><td><code>ZS_TUNE_AUTO_UPGRADES</code></td><td>1</td><td>автообновления безопасности</td></tr>
+<tr><td><code>ZS_TUNE_F2B_BANTIME / FINDTIME / MAXRETRY</code></td><td>1h / 10m / 5</td><td>политика fail2ban</td></tr>
+<tr><td><code>ZS_TUNE_SUDO_HARDEN</code></td><td>1</td><td>use_pty + logfile для sudo</td></tr>
+<tr><td><code>ZS_TUNE_TMP_NOEXEC</code></td><td>0 <span class="tag t-opt">OPT-IN</span></td><td>noexec на /tmp</td></tr>
+<tr><td><code>ZS_TUNE_DISABLE_IPV6</code></td><td>0 <span class="tag t-opt">OPT-IN</span></td><td>полное отключение IPv6</td></tr>
+<tr><td><code>ZS_TUNE_DISABLE_USB_STORAGE</code></td><td>0 (1 на server)</td><td>блэклист usb-storage</td></tr>
+<tr><td><code>ZS_TUNE_AUDIT_IMMUTABLE</code></td><td>0 <span class="tag t-opt">OPT-IN</span></td><td>auditd -e 2 (иммутабельные правила)</td></tr>
+</table>
+</section>
+
+<!-- ============================== 10 ============================== -->
+<section>
+<h2><span class="num">10</span> ЧЕГО СКРИПТ СОЗНАТЕЛЬНО НЕ ДЕЛАЕТ</h2>
+<div class="panel">
+<ul>
+<li>не переписывает <code>/etc/fstab</code> для /tmp и /var/tmp автоматически (только рекомендации);</li>
+<li>не переводит AppArmor-профили в enforce вслепую;</li>
+<li>не отключает user namespaces и не трогает snap/squashfs;</li>
+<li>не ставит GRUB-пароль (модель угроз физического доступа — решение по месту);</li>
+<li>не перекраивает разделы диска (отдельные /home, /tmp, /var — решение времени установки);</li>
+<li>не настраивает удалённую отправку логов (специфично для среды);</li>
+<li>не ставит антивирус и AIDE (тяжеловесно; возможны как явные opt-in позже);</li>
+<li>не заменяет сертифицированные сканеры — для формальной отчётности пара с Lynis/OpenSCAP.</li>
+</ul>
+<p>Границы названы явно: когда Lynis предлагает что-то из списка выше — это задуманное
+разделение труда, а не пробел. На стоковом десктопе 24.04 применение базлайна поднимает
+Lynis hardening index примерно с 60 до середины 80-х; остаток — как раз пункты этого списка.</p>
+</div>
+</section>
+
+<!-- ============================== 11 ============================== -->
+<section>
+<h2><span class="num">11</span> ШПАРГАЛКА КОМАНД</h2>
+<pre><span class="cm"># Что скрипт видит на этой машине</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--detect-only</span>
+
+<span class="cm"># Аудит соответствия (read-only) → TXT + HTML отчёты</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--audit</span>
+
+<span class="cm"># Посмотреть, что будет сделано, ничего не меняя (режим по умолчанию)</span>
+sudo ./zavetsec-harden-ubuntu.sh
+
+<span class="cm"># Применить базлайн (профиль подбирается по роли автоматически)</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--apply</span>
+
+<span class="cm"># Конкретный профиль / роль</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--apply --profile</span> <span class="s">server</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--apply --role</span> <span class="s">container-host</span>
+
+<span class="cm"># Только выбранные модули / без выбранных</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--apply --only</span> <span class="s">ssh,firewall</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--apply --skip</span> <span class="s">firewall</span>
+
+<span class="cm"># Аудит в каталог, только HTML</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--audit --report-dir</span> <span class="s">/var/log/zs-audit</span> <span class="p">--format</span> <span class="s">html</span>
+
+<span class="cm"># Откат последнего применения</span>
+sudo bash /var/log/zavetsec-harden/&lt;метка&gt;/rollback.sh</pre>
+</section>
+
+<footer>ZAVETSEC · PRACTICAL SECURITY ENGINEERING · v1.5-ubuntu · self-contained, no external requests</footer>
+</div>
+</body>
+</html>
