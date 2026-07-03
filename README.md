@@ -136,8 +136,8 @@ Being explicit about the boundaries is part of the point: the tool does a well-d
 ## Safety model
 
 1. **Dry-run by default.** Nothing changes unless you pass `--apply` — and dry-run shows *everything*, including firewall and service actions.
-2. **Backups before every change.** Originals are copied into `state-dir/backup`, preserving paths. Dry-run never writes backups or rollback entries.
-3. **Auto-generated rollback.** `sudo bash <state-dir>/rollback.sh` reverts the whole run. If ufw was active *before* the run, rollback restores your previous ruleset instead of disabling the firewall.
+2. **Backups before every change.** Originals are copied into `state-dir/backup`, preserving paths. Audit and dry-run create no state directory and no rollback files at all — only `--apply` does.
+3. **Auto-generated rollback.** `sudo bash <state-dir>/rollback.sh` reverts the run's changes, re-runs `sysctl --system`, and prints exactly what persists until reboot. If ufw was active *before* the run, rollback restores your previous ruleset instead of disabling the firewall.
 4. **Detect before act.** Role, firewall backend, MAC, and the live SSH port drive behaviour.
 5. **Anti-lockout guards** on the modules that can strand you:
    - **SSH** writes a drop-in named `00-…` so it wins under sshd's first-match-wins semantics (a higher number silently loses to `50-cloud-init.conf` on cloud images); filters ciphers/KEX/MACs through `ssh -Q`; runs `sshd -t` and restores the previous drop-in on failure; reloads (never kills) `sshd`; is aware of `ssh.socket` on 24.04; uses `ChallengeResponseAuthentication` on focal where the modern option name doesn't exist yet.
@@ -333,8 +333,9 @@ Run a subset with `--only` or exclude with `--skip`.
 --detect-only            print the detection summary and exit
 --report-dir <dir>       where to write audit reports (default: current dir)
 --format <txt|html|both> audit report format (default: both)
---state-dir <dir>        logs/backups/rollback (default: /var/log/zavetsec-harden/<ts>;
-                         falls back to /tmp for non-root detect/audit runs)
+--state-dir <dir>        logs/backups/rollback for --apply runs
+                         (default: /var/log/zavetsec-harden/<ts>; audit and
+                         dry-run create no state directory at all)
 --force                  run even on non-Ubuntu (not recommended)
 --list                   list modules in run order
 --no-color               disable ANSI color
@@ -385,13 +386,20 @@ Two implementation details worth knowing, both earned the hard way:
 
 ## Rollback
 
-Every `--apply` run creates a timestamped state directory with backups, a log, a change list, and a rollback script:
+Every `--apply` run creates a timestamped state directory with backups, a log, a change list, and a rollback script (audit and dry-run runs create nothing — no empty-rollback clutter):
 
 ```bash
 sudo bash /var/log/zavetsec-harden/<timestamp>/rollback.sh
 ```
 
-It restores backed-up files, re-enables disabled/masked services, and undoes ufw/sysctl/PAM changes from that run. If ufw was active before the run, rollback restores the pre-run ruleset (snapshotted into the backup dir) — it will not leave you with a disabled firewall you didn't ask for. Packages installed by the run that guard live sessions (fail2ban) are removed on rollback only if the run installed them.
+It restores backed-up files, re-enables disabled/masked services, undoes ufw/sysctl/PAM changes from that run, then re-runs `sysctl --system` and prints an honest summary of what it could and couldn't revert.
+
+Know the boundaries — the script itself tells you all of this when it finishes:
+
+- **Rollback is per-run.** Each `rollback.sh` reverts exactly the changes *its* apply made. If you applied several times, run each content-bearing `rollback.sh` from newest to oldest.
+- **Runtime state persists until reboot.** Removing a `sysctl.d` file doesn't reset live kernel values, and loaded audit rules stay loaded — reboot to complete the revert.
+- **Packages stay by design.** auditd, unattended-upgrades, sysstat etc. remain installed (removing security tooling behind your back would be worse); the exception is fail2ban, which is removed if — and only if — the run being rolled back installed it.
+- **A pre-existing ufw ruleset is restored, not disabled.** If ufw was active before the run, rollback puts your previous rules back; it will never leave you with a firewall you didn't ask to lose.
 
 ---
 
@@ -425,6 +433,9 @@ The `workstation` profile deliberately keeps apport, and apport sets `suid_dumpa
 
 **My audit shows a WARN about AppArmor complain-mode profiles — is that bad?**
 On Desktop images several snap/browser profiles ship in complain mode; the WARN is informational. Review with `aa-status` and `aa-enforce` selectively — the tool won't do it blindly for you.
+
+**I ran rollback but the audit score didn't drop back to the original — is rollback broken?**
+Almost certainly not — three effects stack up. (1) Rollback restores *files*; live kernel parameters and loaded audit rules keep their values until **reboot**. (2) Packages installed by the run stay installed by design, so their checks keep passing. (3) Rollback is **per-run**: if you applied several times, the latest rollback returns you to the state before the *latest* apply — which may already have been hardened by earlier ones. For a clean revert test: fresh VM (or snapshot) → one apply → rollback → reboot → audit.
 
 **Potentially disruptive options** (all opt-in): `noexec /tmp`, IPv6 off, `usb-storage` off, `ptrace_scope=2`, auditd immutable `-e 2`, faillock PAM wiring.
 
