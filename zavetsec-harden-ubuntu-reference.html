@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZavetSec-Harden-Ubuntu v1.5 — Complete Reference</title>
+<style>
+/* self-contained: zero external requests. Brand fonts apply when installed
+   locally, otherwise system fallbacks take over. */
+:root{
+  --bg:#0a0d10; --panel:#0d1117; --panel2:#11161d; --line:#1d2733;
+  --txt:#c9d4de; --dim:#7d8b99; --grn:#00ff88; --grn2:#00cc6a;
+  --yel:#ffcc44; --red:#ff5566; --blu:#4db8ff; --pur:#c792ea;
+  --mono:'JetBrains Mono',ui-monospace,'Cascadia Mono',Consolas,Menlo,monospace;
+  --disp:'Rajdhani','Bahnschrift','Arial Narrow',sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:var(--mono);
+  font-size:14px;line-height:1.65;position:relative;overflow-x:hidden}
+/* scanline overlay */
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;
+  background:repeating-linear-gradient(0deg,transparent 0 2px,rgba(0,0,0,.12) 2px 4px)}
+/* radial glow */
+body::after{content:'';position:fixed;top:-30vh;left:50%;transform:translateX(-50%);
+  width:120vw;height:80vh;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse at center,rgba(0,255,136,.06),transparent 60%)}
+.wrap{max-width:1060px;margin:0 auto;padding:36px 26px 80px;position:relative;z-index:1}
+
+h1,h2,h3{font-family:var(--disp);letter-spacing:.05em;line-height:1.2}
+h1{font-size:34px;color:#fff;margin:8px 0 4px}
+h2{font-size:23px;color:var(--grn);margin:0 0 14px;display:flex;align-items:center;gap:14px}
+h3{font-size:17px;color:#e8eef4;margin:22px 0 8px}
+a{color:var(--grn2);text-decoration:none}
+code{font-family:var(--mono);background:#0f1722;border:1px solid var(--line);
+  padding:1px 6px;border-radius:4px;color:#9be8c0;font-size:.92em;white-space:nowrap}
+strong{color:#e8eef4}
+
+/* header */
+.hdr{border:1px solid var(--grn2);border-radius:10px;padding:26px 30px;
+  background:linear-gradient(180deg,#0d1510,#0d1117 70%);position:relative;overflow:hidden}
+.hdr .brand{font-family:var(--disp);letter-spacing:.22em;color:var(--grn2);font-size:13px}
+.hdr .ver{display:inline-block;margin-left:10px;border:1px solid var(--grn2);border-radius:4px;
+  padding:1px 8px;color:var(--grn);font-size:12px;letter-spacing:.08em}
+.hdr p.sub{color:var(--dim);margin:8px 0 0;max-width:780px}
+.status{display:flex;gap:26px;margin-top:18px;flex-wrap:wrap}
+.status .it{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:12px;letter-spacing:.06em}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--grn);box-shadow:0 0 8px var(--grn);
+  animation:pulse 1.8s infinite}
+.dot.y{background:var(--yel);box-shadow:0 0 8px var(--yel);animation-delay:.4s}
+.dot.b{background:var(--blu);box-shadow:0 0 8px var(--blu);animation-delay:.9s}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.dot{animation:none}}
+
+/* sections */
+section{margin-top:44px}
+.num{font-family:var(--disp);font-size:15px;color:var(--bg);background:var(--grn);
+  border-radius:4px;padding:1px 9px;letter-spacing:.05em}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px 22px;margin:12px 0}
+
+/* matrix tables */
+table{width:100%;border-collapse:collapse;margin:12px 0;background:var(--panel);
+  border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:13px}
+th{font-family:var(--disp);letter-spacing:.08em;text-align:left;color:var(--grn);
+  background:#0f1520;padding:9px 12px;border-bottom:1px solid var(--grn2);font-size:13px}
+td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#101823}
+td.c,th.c{text-align:center}
+.on{color:var(--grn)} .off{color:var(--dim)} .kept{color:var(--blu)}
+
+/* badges */
+.tag{display:inline-block;font-size:11px;font-family:var(--disp);letter-spacing:.09em;
+  border-radius:3px;padding:1px 7px;margin-right:4px;vertical-align:1px}
+.t-high{background:#2a1216;color:var(--red);border:1px solid #5c2430}
+.t-med{background:#2a2312;color:var(--yel);border:1px solid #5c5024}
+.t-low{background:#122a1c;color:var(--grn);border:1px solid #245c3a}
+.t-opt{background:#12202a;color:var(--blu);border:1px solid #24455c}
+.t-pass{background:#122a1c;color:var(--grn);border:1px solid #245c3a}
+.t-fail{background:#2a1216;color:var(--red);border:1px solid #5c2430}
+.t-warn{background:#2a2312;color:var(--yel);border:1px solid #5c5024}
+.t-skip{background:#1a1f26;color:var(--dim);border:1px solid #2a3542}
+
+/* code blocks */
+pre{background:#0c1219;border:1px solid var(--line);border-left:3px solid var(--grn2);
+  border-radius:6px;padding:14px 18px;overflow-x:auto;font-size:13px;line-height:1.6}
+pre .cm{color:#5d6b79} pre .k{color:var(--grn)} pre .p{color:var(--blu)} pre .s{color:var(--yel)}
+
+/* alert boxes */
+.alert{border:1px solid #5c2430;border-left:4px solid var(--red);background:#160d10;
+  border-radius:6px;padding:14px 18px;margin:14px 0}
+.alert h4{margin:0 0 6px;font-family:var(--disp);color:var(--red);letter-spacing:.06em;font-size:15px}
+.note{border:1px solid #24455c;border-left:4px solid var(--blu);background:#0d1218;
+  border-radius:6px;padding:14px 18px;margin:14px 0}
+.note h4{margin:0 0 6px;font-family:var(--disp);color:var(--blu);letter-spacing:.06em;font-size:15px}
+.ok{border:1px solid #245c3a;border-left:4px solid var(--grn);background:#0d1510;
+  border-radius:6px;padding:14px 18px;margin:14px 0}
+.ok h4{margin:0 0 6px;font-family:var(--disp);color:var(--grn);letter-spacing:.06em;font-size:15px}
+
+ul{padding-left:22px;margin:8px 0}
+li{margin:5px 0}
+.flow{color:var(--grn2);white-space:pre;font-size:13px;line-height:1.5}
+.mod{border:1px solid var(--line);border-radius:8px;margin:14px 0;overflow:hidden}
+.mod .mh{display:flex;align-items:center;gap:12px;background:#0f1520;
+  padding:10px 16px;border-bottom:1px solid var(--line)}
+.mod .mh .mn{font-family:var(--disp);color:var(--grn);font-size:16px;letter-spacing:.08em}
+.mod .mh .mk{color:var(--dim);font-size:12px}
+.mod .mb{padding:14px 18px}
+footer{margin-top:60px;color:var(--dim);font-size:12px;text-align:center;letter-spacing:.06em}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ============================== HEADER ============================== -->
+<div class="hdr">
+  <div class="brand">ZAVETSEC // DEFENSIVE TOOLING</div>
+  <h1>ZavetSec-Harden-Ubuntu <span class="ver">v1.5-ubuntu</span></h1>
+  <p class="sub">Single-file security hardening and compliance auditing for Ubuntu 20.04 / 22.04 / 24.04.
+  One Bash script, zero dependencies: it detects the host, selects a role-appropriate profile,
+  then either measures compliance against the baseline or enforces it — backing up every change
+  and providing a one-command rollback.</p>
+  <div class="status">
+    <div class="it"><span class="dot"></span>DRY-RUN BY DEFAULT</div>
+    <div class="it"><span class="dot y"></span>BACKUP + ROLLBACK</div>
+    <div class="it"><span class="dot b"></span>11 MODULES · 90+ CHECKS</div>
+  </div>
+</div>
+
+<!-- ============================== 01 ============================== -->
+<section>
+<h2><span class="num">01</span> WHAT IT IS AND WHY</h2>
+<div class="panel">
+<p>Most Linux hardening scripts try to support every distribution, accumulate years of
+compatibility branches nobody re-tests, and eventually become hard to trust with root.
+This tool is built the opposite way: <strong>Ubuntu only, role-aware, audit-first</strong>.</p>
+<p>It knows Ubuntu's release-specific traps and handles them automatically:</p>
+<ul>
+<li><code>yescrypt</code> exists only from 22.04 — on 20.04 the tool falls back to SHA512 with tuned rounds;</li>
+<li><code>pam_faillock</code> requires PAM ≥ 1.4 — it simply doesn't exist on 20.04, and the tool refuses to write a broken PAM stack there;</li>
+<li>sshd 8.2 on focal rejects the modern <code>KbdInteractiveAuthentication</code> option name — the legacy name is used instead;</li>
+<li>cloud images ship a <code>50-cloud-init.conf</code> that silently overrides carelessly named drop-ins —
+our config is named <code>00-…</code> and wins under sshd's first-match-wins semantics;</li>
+<li>stock ufw on noble actively resets <code>log_martians=0</code> on every start — the tool fixes
+ufw's own sysctl file in place.</li>
+</ul>
+<p>Every release is exercised on real VMs through the full
+<code>apply → reboot → audit → rollback → apply</code> cycle. That process caught — and fixed —
+bugs no static review would ever find.</p>
+</div>
+</section>
+
+<!-- ============================== 02 ============================== -->
+<section>
+<h2><span class="num">02</span> OPERATING MODES</h2>
+<table>
+<tr><th>Mode</th><th>Flag</th><th class="c">Root</th><th class="c">Modifies system</th><th>Output</th></tr>
+<tr><td>Detect</td><td><code>--detect-only</code></td><td class="c">optional</td><td class="c off">no</td>
+<td>Summary: Ubuntu release, init, container, firewall, MAC, GUI, SSH ports, role</td></tr>
+<tr><td>Audit</td><td><code>--audit</code> / <code>--check</code></td><td class="c">needed for full coverage</td><td class="c off">no</td>
+<td>Live-system check against the baseline + TXT and HTML reports with a score</td></tr>
+<tr><td>Dry-run</td><td><em>(default)</em></td><td class="c">optional</td><td class="c off">no</td>
+<td>Complete list of what apply would do — including every firewall and service action</td></tr>
+<tr><td>Enforce</td><td><code>--apply</code></td><td class="c on">required</td><td class="c on">yes</td>
+<td>Baseline enforcement: every file backed up, rollback script, change log</td></tr>
+</table>
+<div class="note"><h4>RUNNING WITHOUT ROOT</h4>
+Detection and a partial audit work without root, but the sshd/ufw/AppArmor checks SKIP,
+and both report formats display a prominent “NON-ROOT AUDIT — SCORE IS UNRELIABLE” warning
+so an incomplete score never misleads anyone.</div>
+</section>
+
+<!-- ============================== 03 ============================== -->
+<section>
+<h2><span class="num">03</span> RUN LIFECYCLE</h2>
+<div class="panel"><div class="flow">detect host ──▶ select profile ──▶ audit (read-only, scored report)
+                                       │
+                                       ▼
+                             apply (backup every change)
+                                       │
+                                       ▼
+                             rollback (one command, full revert of the run)</div></div>
+<p>Detection covers: distribution and release (20.04/22.04/24.04), init system, container status,
+firewall backend and whether it's active (SIGPIPE-safe), MAC (AppArmor), GUI presence,
+live SSH port(s) — taken from both the config <em>and</em> <code>ss</code>, with IPv6-safe address
+parsing — plus <code>ssh.socket</code> activation on 24.04, and the machine's role. The role is
+inferred automatically: container → <code>container-host</code>; GUI present → <code>workstation</code>;
+dockerd/kubelet running → server is promoted to <code>container-host</code>; otherwise →
+<code>server</code>. Override the role with <code>--role</code>, the profile with <code>--profile</code>.</p>
+</section>
+
+<!-- ============================== 04 ============================== -->
+<section>
+<h2><span class="num">04</span> PROFILES</h2>
+<p>A profile is a set of <code>ZS_*</code> variables layered over the <code>defaults</code> base.
+Each one encodes the role's deliberate trade-offs: a container host needs IP forwarding and must
+not have its firewall touched; a workstation needs printing, apport, and removable media.</p>
+<table>
+<tr><th>Setting</th><th class="c">defaults</th><th class="c">server</th><th class="c">workstation</th><th class="c">container-host</th></tr>
+<tr><td>Firewall default-deny</td><td class="c off">off</td><td class="c on">on</td><td class="c on">on</td><td class="c off">off (runtime owns rules)</td></tr>
+<tr><td>IP forwarding</td><td class="c off">off</td><td class="c off">off</td><td class="c off">off</td><td class="c kept">on (required)</td></tr>
+<tr><td>ptrace_scope</td><td class="c">1</td><td class="c">2</td><td class="c">1</td><td class="c">1</td></tr>
+<tr><td>Unprivileged eBPF</td><td class="c off">off</td><td class="c off">off</td><td class="c kept">kept</td><td class="c kept">kept (CNI/Cilium)</td></tr>
+<tr><td>usb-storage</td><td class="c kept">kept</td><td class="c off">disabled</td><td class="c kept">kept</td><td class="c off">disabled</td></tr>
+<tr><td>Filesystem module</td><td class="c on">on</td><td class="c on">on</td><td class="c on">on</td><td class="c off">off (overlayfs)</td></tr>
+<tr><td>apport</td><td class="c off">disabled</td><td class="c off">disabled</td><td class="c kept">kept</td><td class="c off">disabled</td></tr>
+<tr><td>cups / avahi</td><td class="c">—</td><td class="c off">disabled</td><td class="c kept">kept</td><td class="c off">disabled</td></tr>
+<tr><td>PermitRootLogin</td><td class="c">prohibit-password</td><td class="c on">no</td><td class="c on">no</td><td class="c on">no</td></tr>
+<tr><td>MaxSessions</td><td class="c">4</td><td class="c">2</td><td class="c">4</td><td class="c">4</td></tr>
+<tr><td>Automatic security upgrades</td><td class="c on">on</td><td class="c on">on</td><td class="c on">on</td><td class="c on">on</td></tr>
+</table>
+<div class="note"><h4>WHY IT'S BUILT THIS WAY</h4>
+Docker publishes ports through its own nftables chains <strong>that bypass ufw</strong> —
+so the firewall module is intentionally off on container-host, and the tool warns about it.
+<code>MaxSessions 4</code> outside servers is also deliberate: a value of 2 breaks SSH
+multiplexing (ControlMaster) and VS Code Remote.</div>
+</section>
+
+<!-- ============================== 05 ============================== -->
+<section>
+<h2><span class="num">05</span> THE MODULES — EXACTLY WHAT EACH ONE DOES</h2>
+<p>Eleven modules in run order. Any subset can be run (<code>--only ssh,firewall</code>) or
+excluded (<code>--skip firewall</code>). Every enforcement module has an audit mirror that shares
+the same baseline — an audit's FAIL list is precisely what apply will change.</p>
+
+<div class="mod"><div class="mh"><span class="num">1</span><span class="mn">SYSCTL-KERNEL</span><span class="mk">kernel self-protection</span></div><div class="mb">
+<p>Writes its own file into <code>/etc/sysctl.d/</code> and applies it with <code>sysctl --system</code>.
+Every key:</p>
+<table>
+<tr><th>Key</th><th class="c">Value</th><th>What it buys you</th></tr>
+<tr><td><code>kernel.kptr_restrict</code></td><td class="c">2</td><td>kernel addresses in /proc hidden even from processes without CAP_SYSLOG — exploits that need kernel offsets get harder to build</td></tr>
+<tr><td><code>kernel.dmesg_restrict</code></td><td class="c">1</td><td>the kernel ring buffer (dmesg) becomes privileged-only — it leaks addresses and hardware details</td></tr>
+<tr><td><code>kernel.printk</code></td><td class="c">3 3 3 3</td><td>the console stops being flooded with kernel messages — fewer info leaks on a physical terminal</td></tr>
+<tr><td><code>kernel.kexec_load_disabled</code></td><td class="c">1</td><td>kexec disabled — the running kernel can't be swapped for another one without a reboot (irreversible until reboot)</td></tr>
+<tr><td><code>kernel.sysrq</code></td><td class="c">0</td><td>magic SysRq combos off — nobody at a keyboard/console can kill processes or dump memory</td></tr>
+<tr><td><code>kernel.perf_event_paranoid</code></td><td class="c">3</td><td>perf events root-only — closes a whole class of side-channel and info-leak techniques</td></tr>
+<tr><td><code>kernel.randomize_va_space</code></td><td class="c">2</td><td>full ASLR including brk — address-space randomization against ROP exploitation</td></tr>
+<tr><td><code>kernel.yama.ptrace_scope</code></td><td class="c">1 / 2</td><td>tracing other processes restricted (1 — descendants only; 2 on server — CAP_SYS_PTRACE only): stops secret-scraping from neighbouring process memory</td></tr>
+<tr><td><code>kernel.unprivileged_bpf_disabled</code></td><td class="c">1</td><td>eBPF privileged-only — historically a rich source of local-privilege-escalation bugs (not set on workstation/container-host)</td></tr>
+<tr><td><code>net.core.bpf_jit_harden</code></td><td class="c">2</td><td>BPF JIT with constant blinding — counters JIT spraying; safe even where unprivileged BPF stays on</td></tr>
+<tr><td><code>dev.tty.ldisc_autoload</code></td><td class="c">0</td><td>no auto-loading of TTY line disciplines — closes an old LPE vector through exotic ldisc modules</td></tr>
+<tr><td><code>kernel.core_uses_pid</code></td><td class="c">1</td><td>PID in core-file names — dumps don't overwrite each other</td></tr>
+<tr><td><code>fs.protected_hardlinks</code></td><td class="c">1</td><td>hardlinking someone else's file requires access to it — kills the classic /tmp link attacks</td></tr>
+<tr><td><code>fs.protected_symlinks</code></td><td class="c">1</td><td>symlinks in sticky dirs only followed on owner match — kills symlink races</td></tr>
+<tr><td><code>fs.protected_fifos</code></td><td class="c">2</td><td>opening someone else's FIFO in sticky dirs is refused — no planted named pipes</td></tr>
+<tr><td><code>fs.protected_regular</code></td><td class="c">2</td><td>same for regular files under O_CREAT — no data spoofing in /tmp</td></tr>
+<tr><td><code>fs.suid_dumpable</code></td><td class="c">0</td><td>suid programs leave no core dumps (they contain privileged memory). <strong>Only when the profile disables apport</strong>: a live apport re-sets 2 on every boot, so on workstation the audit honestly reports SKIP “apport-managed”</td></tr>
+</table>
+<p><span class="tag t-opt">LEFT ALONE</span> user namespaces — disabling them breaks snap, rootless containers and browser sandboxes.</p>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">2</span><span class="mn">SYSCTL-NETWORK</span><span class="mk">network stack</span></div><div class="mb">
+<table>
+<tr><th>Key (all + default)</th><th class="c">Value</th><th>What it buys you</th></tr>
+<tr><td><code>net.ipv4.conf.*.rp_filter</code></td><td class="c">1</td><td>reverse-path filter: packets whose source address isn't reachable via the ingress interface are dropped — baseline anti-spoofing</td></tr>
+<tr><td><code>net.ipv4.conf.*.accept_redirects</code><br><code>net.ipv6.conf.*.accept_redirects</code></td><td class="c">0</td><td>ICMP redirects ignored — a network neighbour can't reroute your traffic through itself (MITM)</td></tr>
+<tr><td><code>net.ipv4.conf.*.secure_redirects</code></td><td class="c">0</td><td>the same even from “trusted” gateways — gateways get compromised too</td></tr>
+<tr><td><code>net.ipv4.conf.*.send_redirects</code></td><td class="c">0</td><td>the host doesn't emit redirects itself — it won't take part in rerouting anyone's traffic</td></tr>
+<tr><td><code>net.ipv4.conf.*.accept_source_route</code><br><code>net.ipv6.conf.*.accept_source_route</code></td><td class="c">0</td><td>source routing refused — a sender can't dictate a packet's path through your network</td></tr>
+<tr><td><code>net.ipv4.conf.*.log_martians</code></td><td class="c">1</td><td>packets with impossible addresses get logged — a scanning/spoofing indicator. The <code>=0</code> lines noble's ufw keeps resetting are fixed inside ufw by the firewall module</td></tr>
+<tr><td><code>net.ipv4.icmp_echo_ignore_broadcasts</code></td><td class="c">1</td><td>broadcast pings ignored — no participation in smurf amplification</td></tr>
+<tr><td><code>net.ipv4.icmp_ignore_bogus_error_responses</code></td><td class="c">1</td><td>garbage ICMP errors stay out of the logs</td></tr>
+<tr><td><code>net.ipv4.tcp_syncookies</code></td><td class="c">1</td><td>SYN cookies — the server stays reachable under SYN flood</td></tr>
+<tr><td><code>net.ipv4.tcp_rfc1337</code></td><td class="c">1</td><td>TIME-WAIT assassination protection — RSTs can't kill sockets in TIME-WAIT</td></tr>
+<tr><td><code>net.ipv6.conf.*.accept_ra</code></td><td class="c">0</td><td>Router Advertisements ignored on server profiles — a rogue RA can't push routes/addresses (workstation keeps SLAAC untouched)</td></tr>
+<tr><td><code>net.ipv4.ip_forward</code><br><code>net.ipv6.conf.*.forwarding</code></td><td class="c">0 / 1</td><td>forwarding off — the host isn't a router; <strong>forced to 1 on container-host</strong>, otherwise containers lose networking</td></tr>
+<tr><td><code>net.ipv6.conf.*.disable_ipv6</code></td><td class="c"><span class="tag t-opt">OPT-IN</span></td><td>full IPv6 shutdown — only via explicit <code>ZS_TUNE_DISABLE_IPV6=1</code>: on hosts with working v6 this is a connectivity cut</td></tr>
+</table>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">3</span><span class="mn">SSH</span><span class="mk">anti-lockout by construction</span></div><div class="mb">
+<p>Writes the drop-in <code>/etc/ssh/sshd_config.d/00-zavetsec-harden.conf</code>. The <code>00-</code>
+prefix is not cosmetic: sshd is first-match-wins, and a higher-numbered file silently loses to
+<code>50-cloud-init.conf</code> on every cloud image.</p>
+<p>Every directive in the drop-in:</p>
+<table>
+<tr><th>Directive</th><th class="c">Value</th><th>Why</th></tr>
+<tr><td><code>PermitRootLogin</code></td><td class="c">no / prohibit-password</td><td>root-by-password is the number-one brute-force target; named profiles close root login entirely</td></tr>
+<tr><td><code>PasswordAuthentication</code></td><td class="c">yes → no <span class="tag t-opt">OPT-IN</span></td><td>disabled only via <code>SSH_DISABLE_PASSWORD=1</code> and <strong>only if authorized_keys are found</strong> — anything else is self-lockout</td></tr>
+<tr><td><code>PermitEmptyPasswords</code></td><td class="c">no</td><td>accounts with empty passwords can't log in over SSH</td></tr>
+<tr><td><code>KbdInteractiveAuthentication</code></td><td class="c">no</td><td>closes the side door for password-style logins; written as the legacy <code>ChallengeResponseAuthentication</code> on focal</td></tr>
+<tr><td><code>MaxAuthTries</code></td><td class="c">3</td><td>three attempts per connection — brute force gets pricier, legitimate users don't notice</td></tr>
+<tr><td><code>MaxSessions</code></td><td class="c">2 / 4</td><td>multiplexed-session cap; 4 outside servers so ControlMaster and VS Code Remote keep working</td></tr>
+<tr><td><code>LoginGraceTime</code></td><td class="c">30</td><td>half a minute to authenticate — stalled half-open connections don't accumulate</td></tr>
+<tr><td><code>ClientAliveInterval / CountMax</code></td><td class="c">300 / 2</td><td>dead sessions close after ~10 minutes — abandoned terminals don't live forever</td></tr>
+<tr><td><code>TCPKeepAlive</code></td><td class="c">no</td><td>TCP-level keepalives are spoofable; liveness is checked only over the encrypted channel</td></tr>
+<tr><td><code>X11Forwarding</code></td><td class="c">no</td><td>the X11 channel is a classic server-to-client attack vector</td></tr>
+<tr><td><code>AllowTcpForwarding</code></td><td class="c">no*</td><td>SSH tunnels closed — a compromised account can't become a pivot into the network (*tunable — admins often legitimately need tunnels)</td></tr>
+<tr><td><code>AllowAgentForwarding</code></td><td class="c">no</td><td>a hostile root on the server can't sign with your agent's keys</td></tr>
+<tr><td><code>PermitUserEnvironment</code></td><td class="c">no</td><td>users can't inject environment variables (LD_PRELOAD and friends) ahead of the shell</td></tr>
+<tr><td><code>IgnoreRhosts / HostbasedAuthentication</code></td><td class="c">yes / no</td><td>relic r-command trust authentication switched off</td></tr>
+<tr><td><code>PermitTunnel</code></td><td class="c">no</td><td>no L2/L3 VPN tunnels over SSH</td></tr>
+<tr><td><code>Compression</code></td><td class="c">no</td><td>pre-auth compression has a vulnerability history; modern links don't need it anyway</td></tr>
+<tr><td><code>LogLevel</code></td><td class="c">VERBOSE</td><td>key fingerprints land in the log — you can tell <em>whose</em> key was used to get in</td></tr>
+<tr><td><code>Banner</code></td><td class="c">/etc/issue.net</td><td>the legal warning is shown before login</td></tr>
+<tr><td><code>KexAlgorithms</code></td><td class="c">list</td><td>sntrup761x25519 (post-quantum hybrid), curve25519, DH group16/18 — <strong>filtered through <code>ssh -Q</code></strong> against the actual sshd</td></tr>
+<tr><td><code>Ciphers</code></td><td class="c">list</td><td>chacha20-poly1305, AES-GCM, AES-CTR — AEAD and CTR only, no CBC anywhere</td></tr>
+<tr><td><code>MACs</code></td><td class="c">list</td><td>ETM variants only (encrypt-then-MAC): hmac-sha2-512/256-etm, umac-128-etm</td></tr>
+</table>
+<div class="ok"><h4>GUARANTEES</h4>
+<code>sshd -t</code> runs before any reload; on failure the <strong>previous drop-in is restored
+from backup</strong> — never just deleted. Password authentication is only ever disabled when
+authorized_keys exist for root or users, and only behind the explicit opt-in
+<code>ZS_TUNE_SSH_DISABLE_PASSWORD=1</code>. sshd is reloaded, never killed, and
+<code>ssh.socket</code> activation on 24.04 is handled correctly.</div>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">4</span><span class="mn">AUTH</span><span class="mk">passwords and lockout policy</span></div><div class="mb">
+<table>
+<tr><th>File / key</th><th class="c">Value</th><th>Why</th></tr>
+<tr><td><code>login.defs · PASS_MAX_DAYS</code></td><td class="c">365</td><td>a password lives at most a year — the compromise between rotation hygiene and “people give up and start writing them on sticky notes”</td></tr>
+<tr><td><code>login.defs · PASS_MIN_DAYS</code></td><td class="c">1</td><td>no changing the password twice in one day — blocks the “cycle through history back to the old one” trick</td></tr>
+<tr><td><code>login.defs · PASS_WARN_AGE</code></td><td class="c">14</td><td>two weeks' warning before expiry</td></tr>
+<tr><td><code>login.defs · UMASK</code></td><td class="c">027 / 022</td><td>new files unreadable by “others”; relaxed on workstation where file sharing between users is expected</td></tr>
+<tr><td><code>login.defs · ENCRYPT_METHOD</code></td><td class="c">YESCRYPT / SHA512</td><td>release-aware hash choice: yescrypt (memory-hard, GPU-resistant) on 22.04+, SHA512 on focal where yescrypt doesn't exist</td></tr>
+<tr><td><code>login.defs · YESCRYPT_COST_FACTOR</code></td><td class="c">8</td><td>yescrypt cost (stock 5): GPU cracking gets orders of magnitude more expensive, logins slower by fractions of a second</td></tr>
+<tr><td><code>login.defs · SHA_CRYPT_MIN/MAX_ROUNDS</code></td><td class="c">10000</td><td>on focal — SHA512 round count doubled over the 5000 default</td></tr>
+<tr><td><code>login.defs · FAILLOG_ENAB</code></td><td class="c">yes</td><td>failed-login accounting enabled</td></tr>
+<tr><td><code>pwquality.conf · minlen</code></td><td class="c">14</td><td>minimum length — length beats complexity: 14 characters is practically uncrackable offline</td></tr>
+<tr><td><code>pwquality.conf · minclass</code></td><td class="c">4</td><td>all four character classes (lower/upper/digits/special)</td></tr>
+<tr><td><code>faillock.conf · deny</code></td><td class="c">5</td><td>account locks after 5 consecutive failures</td></tr>
+<tr><td><code>faillock.conf · unlock_time</code></td><td class="c">900</td><td>auto-unlock after 15 minutes — brute force slowed hundreds of times over, legitimate users never permanently locked out</td></tr>
+<tr><td><code>faillock.conf · fail_interval / audit</code></td><td class="c">900 / on</td><td>the failure-counting window, plus logging of attempts against non-existent usernames</td></tr>
+</table>
+<div class="alert"><h4><span class="tag t-opt">OPT-IN</span> WIRING FAILLOCK INTO PAM <span class="tag t-high">HIGH</span></h4>
+Actually wiring faillock into authentication (<code>ZS_TUNE_ENABLE_FAILLOCK_PAM=1</code>) is off
+by default — it's a lockout risk. When enabled, the native <code>pam-auth-update</code> mechanism
+is used with the canonical <code>preauth(1025) / authfail(0) / authsucc(Additional)</code> stack:
+a locked user is refused before the password check, a failure is counted after pam_unix, and a
+success resets the counter. On 20.04, where pam_faillock doesn't exist, the tool
+<strong>refuses</strong> to enable the wiring rather than write a broken PAM stack.
+Keep a second root session open and verify from a separate session.</div>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">5</span><span class="mn">FIREWALL</span><span class="mk">ufw default-deny</span></div><div class="mb">
+<p>The order is anti-lockout by design: first <code>allow</code> for every detected SSH port
+(from the config and from live sockets), then default-deny inbound, allow outbound, logging —
+and only then <code>ufw --force enable</code>. Loopback and established connections are
+preserved by ufw itself.</p>
+<ul>
+<li>if ufw was active <em>before</em> the run, its ruleset is snapshotted into the backup dir —
+rollback restores those rules instead of disabling the firewall;</li>
+<li>the active <code>log_martians=0</code> lines noble ships in <code>/etc/ufw/sysctl.conf</code>
+are fixed <strong>in place</strong> (appending <code>=1</code> at the end isn't enough — ufw
+applies that file on every start);</li>
+<li>after <code>ufw enable</code>, <code>sysctl --system</code> is re-run so the values from
+<code>/etc/sysctl.d</code> win immediately, not just at the next boot.</li>
+</ul>
+<div class="alert"><h4>DOCKER <span class="tag t-high">IMPORTANT</span></h4>
+Docker publishes container ports through its own nftables chains that bypass ufw — the module
+is disabled by the container-host profile; filter at the orchestrator or cloud-security-group layer.</div>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">6</span><span class="mn">AUDITD</span><span class="mk">the kernel's security journal</span></div><div class="mb">
+<p>Installs auditd and writes a CIS/STIG-informed rule set for <strong>both architectures</strong>
+(<code>arch=b64</code> and <code>arch=b32</code>), loaded via <code>augenrules --load</code> with the
+result verified. Rule groups by key:</p>
+<table>
+<tr><th>Key (-k)</th><th>What is watched</th><th>Why</th></tr>
+<tr><td><code>auditconfig</code></td><td>writes to /etc/audit/, libaudit.conf</td><td>an attempt to blind the audit trail is itself an attack indicator</td></tr>
+<tr><td><code>time-change</code></td><td>adjtimex/settimeofday/clock_settime, /etc/localtime</td><td>clock manipulation is how timelines get muddied during investigations</td></tr>
+<tr><td><code>identity</code></td><td>passwd, shadow, group, gshadow, opasswd</td><td>user creation and password changes — the standard persistence move</td></tr>
+<tr><td><code>scope</code></td><td>/etc/sudoers, /etc/sudoers.d/</td><td>sudo privilege expansion</td></tr>
+<tr><td><code>system-locale</code></td><td>sethostname/setdomainname, hosts, hostname, netplan/</td><td>tampering with network identity and name resolution</td></tr>
+<tr><td><code>MAC-policy</code></td><td>/etc/apparmor/, /etc/apparmor.d/</td><td>weakening mandatory-access profiles</td></tr>
+<tr><td><code>logins / session</code></td><td>faillog, lastlog, utmp, wtmp, btmp</td><td>login-record manipulation — covering tracks</td></tr>
+<tr><td><code>perm_mod</code></td><td>chmod/chown/setxattr families (auid≥1000)</td><td>permission changes by real users — escalation and persistence</td></tr>
+<tr><td><code>access</code></td><td>open/creat/truncate returning EACCES/EPERM (auid≥1000)</td><td>failed access attempts — reconnaissance and path probing</td></tr>
+<tr><td><code>mounts</code></td><td>mount (auid≥1000)</td><td>user-initiated mounts — data exfil, noexec bypass</td></tr>
+<tr><td><code>delete</code></td><td>unlink/rename (auid≥1000)</td><td>deletions and renames — evidence destruction</td></tr>
+<tr><td><code>modules</code></td><td>insmod/rmmod/modprobe + init_module syscalls</td><td>kernel-module loading — rootkits</td></tr>
+<tr><td><code>privileged</code></td><td>execution of the system's suid/sgid binaries</td><td>every use of a privileged program lands in the journal</td></tr>
+</table>
+<p>The daemon itself is configured too: log rotation and disk-full behaviour.
+<span class="tag t-opt">OPT-IN</span> The immutable mode <code>-e 2</code> (rules unchangeable
+until reboot — even for root) via <code>ZS_TUNE_AUDIT_IMMUTABLE=1</code>.</p>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">7</span><span class="mn">FILESYSTEM</span><span class="mk">mount options and rare filesystems</span></div><div class="mb">
+<table>
+<tr><th>Target</th><th class="c">Action</th><th>Why</th></tr>
+<tr><td><code>/dev/shm</code></td><td class="c">nodev,nosuid,noexec</td><td>shared memory is a favourite home for fileless payloads; options written to fstab and applied by an immediate remount</td></tr>
+<tr><td><code>/tmp</code>, <code>/var/tmp</code></td><td class="c">advisory</td><td>fstab is never rewritten automatically (see “what it deliberately doesn't do”); <code>noexec</code> on /tmp is <span class="tag t-opt">OPT-IN</span> because it breaks installers and some builds</td></tr>
+<tr><td><code>cramfs freevxfs jffs2 hfs hfsplus udf</code></td><td class="c">blacklist</td><td>rare filesystems = rarely audited kernel code with a CVE history; blocked via <code>install … /bin/true</code> plus unload. <strong>squashfs is kept</strong> — snap needs it</td></tr>
+<tr><td><code>usb-storage</code></td><td class="c"><span class="tag t-opt">OPT-IN</span> (server: on)</td><td>USB drives are a data-exfil and payload-delivery channel; physical USB is rarely legitimate on a server</td></tr>
+</table>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">8</span><span class="mn">SERVICES</span><span class="mk">attack-surface reduction</span></div><div class="mb">
+<table>
+<tr><th>What</th><th>List</th><th>Why</th></tr>
+<tr><td>Per-profile services</td><td>server: avahi-daemon, rpcbind, cups, cups-browsed, bluetooth, ModemManager · workstation: rpcbind only · container-host: avahi, rpcbind, cups, bluetooth</td><td>every listening daemon is attack surface; on the desktop, printing/BT/mDNS stay — there they're the job, not the risk</td></tr>
+<tr><td>Legacy packages (purge)</td><td>telnetd, telnet-server, rsh-server, rsh-redone-server, talk, talkd, tftpd-hpa, xinetd, nis</td><td>cleartext protocols with 1990s trust authentication — there is no excuse for them in 2026</td></tr>
+<tr><td>Legacy sockets (mask)</td><td>telnet/rsh/rlogin/rexec .socket</td><td>masking guarantees the socket can't come back to life even if the package returns</td></tr>
+<tr><td>Kernel protocols (blacklist)</td><td>dccp, sctp, rds, tipc</td><td>unused network protocols = unused kernel code with a CVE record (RDS is infamous)</td></tr>
+</table>
+<p>Every disablement lands in the rollback script with its re-enable command.</p>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">9</span><span class="mn">EXTRAS</span><span class="mk">patching, brute-force defence, accounting</span></div><div class="mb">
+<table>
+<tr><th>Component</th><th>Configuration</th><th>Why</th></tr>
+<tr><td><code>unattended-upgrades</code></td><td><code>20auto-upgrades</code>: daily list refresh and security patching</td><td>automatic patching closes known CVEs with no human in the loop — it outweighs half the sysctls combined; opt-out: <code>ZS_TUNE_AUTO_UPGRADES=0</code></td></tr>
+<tr><td><code>fail2ban</code></td><td><code>jail.local</code>: bantime 1h, findtime 10m, maxretry 5, sshd jail on</td><td>IP ban after 5 failures in 10 minutes; jail.local survives package updates; <strong>a pre-existing user-managed jail.local is never overwritten</strong> (the tool recognizes its own file by marker); on rollback the package is removed only if that run installed it</td></tr>
+<tr><td><code>debsums</code></td><td>install</td><td>checksum verification of installed packages — detects replaced system binaries</td></tr>
+<tr><td><code>apt-listchanges</code></td><td>install</td><td>visibility into what upgrades actually change</td></tr>
+<tr><td><code>needrestart</code></td><td>install</td><td>shows services still running on stale (patched on disk, not in memory) libraries</td></tr>
+<tr><td><code>libpam-tmpdir</code></td><td>install</td><td>a private TMPDIR per user — an entire class of /tmp attacks disappears</td></tr>
+<tr><td><code>acct</code></td><td>install + enable</td><td>process accounting: who ran what — the raw material of investigations</td></tr>
+<tr><td><code>sysstat</code></td><td><code>ENABLED="true"</code> + service enabled</td><td>historical metrics (sar) — load anomalies visible in hindsight</td></tr>
+</table>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">10</span><span class="mn">APPARMOR</span><span class="mk">mandatory access control</span></div><div class="mb">
+<p>Ensures AppArmor is installed and enabled, counts complain-mode profiles and reports them.
+<strong>Never flips profiles to enforce blindly</strong> — that breaks applications in
+unpredictable ways; enforcing specific profiles stays a deliberate admin decision
+(<code>aa-enforce</code>, selectively).</p>
+</div></div>
+
+<div class="mod"><div class="mh"><span class="num">11</span><span class="mn">MISC</span><span class="mk">everything else that matters</span></div><div class="mb">
+<table>
+<tr><th>Setting</th><th class="c">Value</th><th>Why</th></tr>
+<tr><td>Core dumps (limits)</td><td class="c"><code>* hard core 0</code></td><td>dumps contain process memory — passwords, keys, tokens</td></tr>
+<tr><td>systemd coredump.conf</td><td class="c">Storage=none, ProcessSizeMax=0</td><td>systemd-coredump bypasses ulimit — it gets closed separately</td></tr>
+<tr><td>apport</td><td class="c">off (server)</td><td>the crash reporter collects dumps and metadata; unnecessary on servers, deliberately kept on workstation</td></tr>
+<tr><td>issue / issue.net banners</td><td class="c">warning text</td><td>the “authorized access only” statement is legally on record before login</td></tr>
+<tr><td>cron.allow / at.allow</td><td class="c">600, root only <span class="tag t-med">MED</span></td><td>schedulers are persistence classics; allow-list instead of deny-list. The tool warns explicitly: regular users lose cron until added</td></tr>
+<tr><td>cron.* directories</td><td class="c">go-rwx</td><td>job contents unreadable by the unprivileged — less reconnaissance material</td></tr>
+<tr><td><code>ctrl-alt-del.target</code></td><td class="c">masked</td><td>no accidental or malicious console reboot</td></tr>
+<tr><td>sudo: <code>Defaults use_pty</code></td><td class="c">on</td><td>sudo always runs in its own PTY — defeats controlling-terminal hijacking by background processes</td></tr>
+<tr><td>sudo: <code>Defaults logfile</code></td><td class="c">/var/log/sudo.log</td><td>a sudo trail independent of syslog. The file is checked with <code>visudo -c</code> and <strong>removed instantly if the validator rejects it</strong> — this module cannot brick sudo</td></tr>
+<tr><td><code>/etc/shadow</code></td><td class="c">640 root:shadow</td><td>password hashes readable only by root and the shadow group</td></tr>
+<tr><td><code>/etc/passwd</code>, <code>/etc/group</code></td><td class="c">644</td><td>canonical permissions — no tighter (legitimate programs read them), no looser</td></tr>
+<tr><td><code>/etc/sudoers.d</code></td><td class="c">750</td><td>sudo rules unreadable by the unprivileged</td></tr>
+<tr><td><code>/etc/ssh/sshd_config</code></td><td class="c">600</td><td>the SSH config is root-only</td></tr>
+</table>
+</div></div>
+</section>
+
+<!-- ============================== 06 ============================== -->
+<section>
+<h2><span class="num">06</span> SAFETY MACHINERY</h2>
+<div class="panel">
+<ul>
+<li><strong>Dry-run by default.</strong> Without <code>--apply</code> the system is untouched, and
+the output shows <em>every</em> intended action — including ufw and systemctl commands
+(the <code>would run:</code> lines).</li>
+<li><strong>Backup before every change.</strong> Originals are copied into
+<code>state-dir/backup</code>, preserving paths. Audit and dry-run create no state directory,
+no empty rollback files — nothing at all.</li>
+<li><strong>Idempotent and verified.</strong> Re-running is safe (a wall of <code>already</code>);
+every in-place file edit is verified after writing — a failure produces a loud <code>ERR</code>,
+never a false <code>OK</code>. Commented lines (including the documentation comments in
+login.defs) are never rewritten.</li>
+<li><strong>Apply confirmation.</strong> On an interactive terminal an explicit <code>YES</code>
+is required; in CI/automation the prompt is skipped.</li>
+<li><strong>Non-Ubuntu is refused</strong> without <code>--force</code>; derivatives
+(Mint, Pop!_OS) are detected and allowed with a warning.</li>
+</ul>
+</div>
+<div class="alert"><h4>FIRST REMOTE APPLY</h4>
+Always keep a second root session open the first time you run <code>--apply</code> on a remote
+machine — guarantees or not. Testing a fresh SSH connection immediately after applying is mandatory.</div>
+</section>
+
+<!-- ============================== 07 ============================== -->
+<section>
+<h2><span class="num">07</span> AUDIT AND REPORTS</h2>
+<p>The audit reads the <strong>live system state</strong>, not just config files: the kernel via
+<code>sysctl -n</code>, the effective SSH config via <code>sshd -T</code> (what the daemon actually
+resolved after all drop-ins), <code>ufw status</code>, <code>aa-status</code>,
+<code>auditctl -l</code>, mount options via <code>findmnt</code>, real permissions via
+<code>stat</code>, service and package state.</p>
+<p>Every check gets a status and a severity:</p>
+<p>
+<span class="tag t-pass">PASS</span> matches the baseline&nbsp;&nbsp;
+<span class="tag t-fail">FAIL</span> a deviation — apply will fix it&nbsp;&nbsp;
+<span class="tag t-warn">WARN</span> needs attention, not necessarily a defect&nbsp;&nbsp;
+<span class="tag t-skip">SKIP</span> not applicable / insufficient privileges — reason in the note
+</p>
+<p>
+<span class="tag t-high">HIGH</span> security-critical&nbsp;&nbsp;
+<span class="tag t-med">MED</span> important&nbsp;&nbsp;
+<span class="tag t-low">LOW</span> desirable
+</p>
+<p>Score = PASS / (PASS + FAIL). Reports land in the current directory
+(<code>--report-dir</code> to change) in two formats (<code>--format txt|html|both</code>):</p>
+<ul>
+<li><strong>TXT</strong> — grouped by category, a summary line, and an explicit failure list with
+the exact remediation command. Great for logs, cron jobs and diffing between runs.</li>
+<li><strong>HTML</strong> — a self-contained page: compliance gauge, PASS/FAIL/WARN/SKIP tallies,
+a red panel listing every failure as “expected vs got”, per-category tables with severity badges,
+and a live filter box. <strong>Not a single external request</strong> — an audit artifact has no
+business phoning home.</li>
+</ul>
+<p>Context is reported honestly: on workstation, where apport is deliberately kept,
+<code>fs.suid_dumpable</code> shows as SKIP “apport-managed” instead of a false FAIL.</p>
+</section>
+
+<!-- ============================== 08 ============================== -->
+<section>
+<h2><span class="num">08</span> ROLLBACK — WHAT IT REVERTS AND WHAT IT CAN'T</h2>
+<p>Every <code>--apply</code> creates <code>/var/log/zavetsec-harden/&lt;timestamp&gt;/</code>
+with backups, a log, the change list and the rollback script:</p>
+<pre><span class="k">sudo</span> bash /var/log/zavetsec-harden/&lt;timestamp&gt;/rollback.sh</pre>
+<p>It restores files from backup, re-enables disabled/masked services, undoes the run's
+ufw/sysctl/PAM changes, then runs <code>sysctl --system</code> and prints an honest summary.
+The boundaries — the script itself tells you all of this when it finishes:</p>
+<ul>
+<li><strong>Rollback is per-run.</strong> Each rollback.sh reverts exactly what <em>its</em> apply
+changed. Applied several times? Run each content-bearing rollback from newest to oldest.</li>
+<li><strong>Runtime state persists until reboot.</strong> Deleting a sysctl file doesn't reset the
+values inside the kernel, and loaded audit rules stay loaded — a full revert needs a reboot.</li>
+<li><strong>Packages stay by design.</strong> auditd, unattended-upgrades, sysstat are not removed
+(uninstalling security tooling behind your back would be worse); the exception is fail2ban,
+removed if — and only if — the run being rolled back installed it.</li>
+<li><strong>A pre-existing ufw ruleset is restored, not disabled.</strong> If the firewall was
+active before the run, rollback puts your previous rules back.</li>
+</ul>
+</section>
+
+<!-- ============================== 09 ============================== -->
+<section>
+<h2><span class="num">09</span> KEY TUNABLES</h2>
+<p>Every parameter is a variable in <code>load_profile</code>; change them in a profile or pass
+them through the environment. The essentials:</p>
+<table>
+<tr><th>Variable</th><th>Default</th><th>What it controls</th></tr>
+<tr><td><code>ZS_ENABLE_&lt;MODULE&gt;</code></td><td>per profile</td><td>toggles any of the 11 modules</td></tr>
+<tr><td><code>ZS_TUNE_PASS_MAX_DAYS</code></td><td>365</td><td>maximum password age</td></tr>
+<tr><td><code>ZS_TUNE_UMASK</code></td><td>027</td><td>default umask (022 on workstation)</td></tr>
+<tr><td><code>ZS_TUNE_YESCRYPT_COST</code> / <code>SHA_ROUNDS</code></td><td>8 / 10000</td><td>password-hashing cost</td></tr>
+<tr><td><code>ZS_TUNE_PWQ_MINLEN</code> / <code>MINCLASS</code></td><td>14 / 4</td><td>password complexity requirements</td></tr>
+<tr><td><code>ZS_TUNE_ENABLE_FAILLOCK_PAM</code></td><td>0 <span class="tag t-opt">OPT-IN</span></td><td>wiring faillock into the PAM stack</td></tr>
+<tr><td><code>ZS_TUNE_SSH_PERMIT_ROOT</code></td><td>per profile</td><td>PermitRootLogin</td></tr>
+<tr><td><code>ZS_TUNE_SSH_DISABLE_PASSWORD</code></td><td>0 <span class="tag t-opt">OPT-IN</span></td><td>disable password SSH (only when keys exist)</td></tr>
+<tr><td><code>ZS_TUNE_AUTO_UPGRADES</code></td><td>1</td><td>automatic security upgrades</td></tr>
+<tr><td><code>ZS_TUNE_F2B_BANTIME / FINDTIME / MAXRETRY</code></td><td>1h / 10m / 5</td><td>fail2ban policy</td></tr>
+<tr><td><code>ZS_TUNE_SUDO_HARDEN</code></td><td>1</td><td>use_pty + logfile for sudo</td></tr>
+<tr><td><code>ZS_TUNE_TMP_NOEXEC</code></td><td>0 <span class="tag t-opt">OPT-IN</span></td><td>noexec on /tmp</td></tr>
+<tr><td><code>ZS_TUNE_DISABLE_IPV6</code></td><td>0 <span class="tag t-opt">OPT-IN</span></td><td>full IPv6 shutdown</td></tr>
+<tr><td><code>ZS_TUNE_DISABLE_USB_STORAGE</code></td><td>0 (1 on server)</td><td>usb-storage blacklist</td></tr>
+<tr><td><code>ZS_TUNE_AUDIT_IMMUTABLE</code></td><td>0 <span class="tag t-opt">OPT-IN</span></td><td>auditd -e 2 (immutable rules)</td></tr>
+</table>
+</section>
+
+<!-- ============================== 10 ============================== -->
+<section>
+<h2><span class="num">10</span> WHAT IT DELIBERATELY DOES NOT DO</h2>
+<div class="panel">
+<ul>
+<li>doesn't rewrite <code>/etc/fstab</code> for /tmp and /var/tmp automatically (advisory only);</li>
+<li>doesn't flip AppArmor profiles to enforce blindly;</li>
+<li>doesn't disable user namespaces and doesn't touch snap/squashfs;</li>
+<li>doesn't set a GRUB password (a physical-access threat model — decide per site);</li>
+<li>doesn't repartition disks (separate /home, /tmp, /var are install-time decisions);</li>
+<li>doesn't configure remote log shipping (environment-specific by nature);</li>
+<li>doesn't install a malware scanner or AIDE (heavyweight; may appear later as explicit opt-ins);</li>
+<li>doesn't replace certified scanners — pair with Lynis/OpenSCAP for formal reporting.</li>
+</ul>
+<p>The boundaries are named on purpose: when Lynis suggests something from the list above,
+that's the intended division of labour, not a gap. On a stock 24.04 desktop, applying the
+baseline typically moves the Lynis hardening index from roughly 60 into the mid-80s;
+the remainder is exactly this list.</p>
+</div>
+</section>
+
+<!-- ============================== 11 ============================== -->
+<section>
+<h2><span class="num">11</span> COMMAND CHEAT SHEET</h2>
+<pre><span class="cm"># What the tool sees on this machine</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--detect-only</span>
+
+<span class="cm"># Compliance audit (read-only) → TXT + HTML reports</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--audit</span>
+
+<span class="cm"># See what would be done without changing anything (the default mode)</span>
+sudo ./zavetsec-harden-ubuntu.sh
+
+<span class="cm"># Enforce the baseline (profile auto-selected from the detected role)</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--apply</span>
+
+<span class="cm"># A specific profile / role</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--apply --profile</span> <span class="s">server</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--apply --role</span> <span class="s">container-host</span>
+
+<span class="cm"># Only selected modules / all but selected</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--apply --only</span> <span class="s">ssh,firewall</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--apply --skip</span> <span class="s">firewall</span>
+
+<span class="cm"># Audit into a directory, HTML only</span>
+sudo ./zavetsec-harden-ubuntu.sh <span class="p">--audit --report-dir</span> <span class="s">/var/log/zs-audit</span> <span class="p">--format</span> <span class="s">html</span>
+
+<span class="cm"># Revert the latest apply</span>
+sudo bash /var/log/zavetsec-harden/&lt;timestamp&gt;/rollback.sh</pre>
+</section>
+
+<footer>ZAVETSEC · PRACTICAL SECURITY ENGINEERING · v1.5-ubuntu · self-contained, no external requests</footer>
+</div>
+</body>
+</html>
