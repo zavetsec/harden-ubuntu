@@ -20,6 +20,7 @@
 #    sudo ./chrome-policy-deploy.sh --allow-ext ID   # разрешить расширение (можно много раз)
 #    sudo ./chrome-policy-deploy.sh --force-ext ID   # ПРИНУДИТЕЛЬНО поставить всем
 #    sudo ./chrome-policy-deploy.sh --no-ublock      # не ставить uBlock Origin Lite
+#    sudo ./chrome-policy-deploy.sh --webrtc proxy   # WebRTC только через прокси
 #    sudo ./chrome-policy-deploy.sh --allow-devtools # оставить DevTools включёнными
 #    sudo ./chrome-policy-deploy.sh --with-chromium  # продублировать для Chromium
 #    sudo ./chrome-policy-deploy.sh --install-chrome # + подключить репозиторий Google
@@ -30,6 +31,7 @@ set -uo pipefail
 
 VER="1.0"
 DRY=0; WITH_CHROMIUM=0; INSTALL_CHROME=0; REMOVE=0; SHOW=0; ALLOW_DEVTOOLS=0; NO_UBLOCK=0
+WEBRTC="default"
 EXTRA_EXTS=(); FORCE_EXTS=()
 
 CHROME_BASE="/etc/opt/chrome/policies"
@@ -74,6 +76,9 @@ while [[ $# -gt 0 ]]; do case "$1" in
                       FORCE_EXTS+=("$2"); shift;;
     --force-ext=*)    FORCE_EXTS+=("${1#*=}");;
     --no-ublock)      NO_UBLOCK=1;;
+    --webrtc)         [[ -n "${2:-}" ]] || die "--webrtc требует proxy|default"
+                      WEBRTC="$2"; shift;;
+    --webrtc=*)       WEBRTC="${1#*=}";;
     --remove)         REMOVE=1;;
     --show)           SHOW=1;;
     --no-color)       export NO_COLOR=1;;
@@ -190,12 +195,40 @@ else
     warn "если на машине кто-то разрабатывает или отлаживает веб — это ему сломает работу"
 fi
 
+# --- WebRTC -----------------------------------------------------------------
+# ВАЖНО: в Chrome НЕТ политики, полностью убирающей WebRTC. RTCPeerConnection
+# остаётся доступен из JavaScript при любых настройках. Максимум, что даёт
+# корпоративная политика — запретить обход прокси, и для задачи «не светить
+# реальный IP за прокси» этого достаточно.
+case "$WEBRTC" in
+  proxy|off)
+    [[ "$WEBRTC" == "off" ]] && {
+        warn "Chrome не умеет отключать WebRTC политикой — применяю строжайший"
+        warn "доступный режим (disable_non_proxied_udp). Сам API останется в JS."
+    }
+    # Обе формы имени: WebRtcIPHandlingPolicy — историческая, WebRtcIPHandling —
+    # актуальная. Незнакомую Chrome просто пометит в chrome://policy и пропустит.
+    WEBRTC_BLOCK='  "WebRtcIPHandlingPolicy": "disable_non_proxied_udp",
+  "WebRtcIPHandling": "disable_non_proxied_udp",
+  "WebRtcLocalIpsAllowedUrls": [],
+'
+    info "WebRTC: запрещён непроксированный UDP, локальные IP не отдаются сайтам"
+    warn "видеозвонки в браузере соединятся, только если прокси пропускает медиатрафик"
+    ;;
+  default)
+    WEBRTC_BLOCK=""
+    ;;
+  *)
+    die "--webrtc принимает proxy или default (получено: ${WEBRTC})"
+    ;;
+esac
+
 # --- сам файл политик -------------------------------------------------------
 POLICY_JSON=$(cat <<EOF
 {
   "_comment": "Managed by chrome-policy-deploy.sh — не редактируйте вручную, изменения перезапишутся",
 
-  "SafeBrowsingProtectionLevel": 2,
+${WEBRTC_BLOCK}  "SafeBrowsingProtectionLevel": 2,
   "DownloadRestrictions": 1,
   "SSLVersionMin": "tls1.2",
   "HttpsOnlyMode": "force_enabled",
@@ -334,9 +367,14 @@ if [[ ${#FORCED[@]} -gt 0 ]]; then
     [[ "$NO_UBLOCK" == "1" ]] || printf '    %s= uBlock Origin Lite (MV3)%s\n' "$D" "$R"
 fi
 printf '  DevTools: %s\n' "$([[ "$ALLOW_DEVTOOLS" == "1" ]] && echo 'разрешены' || echo 'ЗАПРЕЩЕНЫ')"
+if [[ "$WEBRTC" != "default" ]]; then
+    printf '  WebRTC: только через прокси (полностью Chrome отключать не умеет)\n'
+fi
 printf '  Бэкап и откат: %s\n' "$ROLLBACK"
 echo
 printf '  %sПроверка:%s откройте chrome://policy, нажмите Reload policies,\n' "$C" "$R"
 printf '            у всех политик статус должен быть OK\n'
+[[ "$WEBRTC" != "default" ]] && \
+printf '  %sУтечка IP:%s проверьте на https://browserleaks.com/webrtc\n' "$C" "$R"
 printf '  %sОткат:%s    sudo bash %s\n' "$Y" "$R" "$ROLLBACK"
 echo

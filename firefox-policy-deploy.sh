@@ -19,6 +19,8 @@
 #    sudo ./firefox-policy-deploy.sh                    # применить
 #    sudo ./firefox-policy-deploy.sh --allow-devtools   # оставить DevTools
 #    sudo ./firefox-policy-deploy.sh --no-ublock        # без uBlock Origin
+#    sudo ./firefox-policy-deploy.sh --webrtc off       # выключить WebRTC совсем
+#    sudo ./firefox-policy-deploy.sh --webrtc proxy     # WebRTC только через прокси
 #    sudo ./firefox-policy-deploy.sh --force-ext 'ID=URL'   # доп. расширение
 #    sudo ./firefox-policy-deploy.sh --allow-ext ID     # разрешить установку
 #    sudo ./firefox-policy-deploy.sh --also-distribution # + в каталог установки
@@ -31,6 +33,7 @@ set -uo pipefail
 
 VER="1.0"
 DRY=0; REMOVE=0; SHOW=0; ALLOW_DEVTOOLS=0; NO_UBLOCK=0; ALSO_DIST=0
+WEBRTC="default"
 ALLOW_EXTS=(); FORCE_SPECS=()
 
 POLICY_DIR="/etc/firefox/policies"
@@ -62,6 +65,9 @@ while [[ $# -gt 0 ]]; do case "$1" in
     --allow-devtools)    ALLOW_DEVTOOLS=1;;
     --no-ublock)         NO_UBLOCK=1;;
     --also-distribution) ALSO_DIST=1;;
+    --webrtc)            [[ -n "${2:-}" ]] || die "--webrtc требует off|proxy|default"
+                         WEBRTC="$2"; shift;;
+    --webrtc=*)          WEBRTC="${1#*=}";;
     --allow-ext)         [[ -n "${2:-}" ]] || die "--allow-ext требует ID расширения"
                          ALLOW_EXTS+=("$2"); shift;;
     --allow-ext=*)       ALLOW_EXTS+=("${1#*=}");;
@@ -184,6 +190,41 @@ else
     warn "исходного кода страницы, скорее всего, останется доступен."
 fi
 
+# --- WebRTC -----------------------------------------------------------------
+# За прокси WebRTC — главный канал утечки реального IP: он собирает ICE-кандидаты
+# напрямую через STUN по UDP, минуя прокси, и отдаёт этот адрес любому сайту
+# через JavaScript. В Firefox, в отличие от Chrome, это лечится полностью.
+case "$WEBRTC" in
+  off)
+    # media.peerconnection.enabled=false убирает RTCPeerConnection из JS
+    # целиком: утечь нечему, но и видеозвонки в браузере работать перестанут.
+    WEBRTC_PREFS='
+      "media.peerconnection.enabled":                   { "Value": false, "Status": "locked" },'
+    warn "WebRTC будет ОТКЛЮЧЁН полностью"
+    warn "перестанут работать: Google Meet, Zoom в браузере, Teams web, Jitsi,"
+    warn "Discord web, демонстрация экрана и любые голосовые звонки на сайтах"
+    ;;
+  proxy)
+    # WebRTC остаётся рабочим, но обязан ходить только через прокси:
+    #   proxy_only          — запрет любых кандидатов в обход прокси
+    #   no_host             — не отдавать адреса локальных интерфейсов
+    #   default_address_only— только один адрес основного маршрута
+    WEBRTC_PREFS='
+      "media.peerconnection.enabled":                   { "Value": true,  "Status": "locked" },
+      "media.peerconnection.ice.proxy_only":            { "Value": true,  "Status": "locked" },
+      "media.peerconnection.ice.no_host":               { "Value": true,  "Status": "locked" },
+      "media.peerconnection.ice.default_address_only":  { "Value": true,  "Status": "locked" },'
+    info "WebRTC разрешён только через прокси — реальный IP не утечёт"
+    warn "если прокси не пропускает медиатрафик, звонки в браузере не соединятся"
+    ;;
+  default)
+    WEBRTC_PREFS=""
+    ;;
+  *)
+    die "--webrtc принимает off, proxy или default (получено: ${WEBRTC})"
+    ;;
+esac
+
 # --- сам файл политик -------------------------------------------------------
 POLICY_JSON=$(cat <<EOF
 {
@@ -266,7 +307,7 @@ ${EXT_JSON}
     "OverrideFirstRunPage": "",
     "OverridePostUpdatePage": "",
 
-    "Preferences": {
+    "Preferences": {${WEBRTC_PREFS}
       "network.predictor.enabled":            { "Value": false, "Status": "locked" },
       "network.dns.disablePrefetch":          { "Value": true,  "Status": "locked" },
       "privacy.globalprivacycontrol.enabled": { "Value": true,  "Status": "locked" },
@@ -374,9 +415,16 @@ else
     printf '  uBlock Origin: не ставится (--no-ublock)\n'
 fi
 printf '  DevTools: %s\n' "$([[ "$ALLOW_DEVTOOLS" == "1" ]] && echo 'разрешены' || echo 'ЗАПРЕЩЕНЫ')"
+case "$WEBRTC" in
+  off)   printf '  WebRTC: отключён полностью\n';;
+  proxy) printf '  WebRTC: только через прокси\n';;
+  *)     printf '  WebRTC: не изменялся (по умолчанию)\n';;
+esac
 printf '  Бэкап и откат: %s\n' "$ROLLBACK"
 echo
 printf '  %sПроверка:%s откройте about:policies — вкладка "Активные" покажет\n' "$C" "$R"
 printf '            применённое, вкладка "Ошибки" — что браузер не понял\n'
+[[ "$WEBRTC" != "default" ]] && \
+printf '  %sУтечка IP:%s проверьте на https://browserleaks.com/webrtc\n' "$C" "$R"
 printf '  %sОткат:%s    sudo bash %s\n' "$Y" "$R" "$ROLLBACK"
 echo
