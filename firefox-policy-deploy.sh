@@ -21,6 +21,15 @@
 #    sudo ./firefox-policy-deploy.sh --no-ublock        # без uBlock Origin
 #    sudo ./firefox-policy-deploy.sh --webrtc off       # выключить WebRTC совсем
 #    sudo ./firefox-policy-deploy.sh --webrtc proxy     # WebRTC только через прокси
+#    sudo ./firefox-policy-deploy.sh --doh off          # не трогать DNS вообще
+#    sudo ./firefox-policy-deploy.sh --no-lock-history  # разрешить чистить историю
+#    sudo ./firefox-policy-deploy.sh --no-block-private # разрешить приватный режим
+#
+#  ЧЕГО СКРИПТ НЕ ДЕЛАЕТ НИКОГДА:
+#    * не задаёт политику Proxy и не пишет ни одного параметра network.proxy.*
+#    * не переключает Firefox на системный прокси и не уводит с него
+#    Настройки прокси остаются ровно такими, какими вы их сделали. Перед
+#    записью файла это проверяется автоматически (см. «страховка от прокси»).
 #    sudo ./firefox-policy-deploy.sh --force-ext 'ID=URL'   # доп. расширение
 #    sudo ./firefox-policy-deploy.sh --allow-ext ID     # разрешить установку
 #    sudo ./firefox-policy-deploy.sh --also-distribution # + в каталог установки
@@ -33,7 +42,8 @@ set -uo pipefail
 
 VER="1.0"
 DRY=0; REMOVE=0; SHOW=0; ALLOW_DEVTOOLS=0; NO_UBLOCK=0; ALSO_DIST=0
-WEBRTC="default"
+LOCK_HISTORY=1; BLOCK_PRIVATE=1
+WEBRTC="default"; DOH="auto"
 ALLOW_EXTS=(); FORCE_SPECS=()
 
 POLICY_DIR="/etc/firefox/policies"
@@ -63,11 +73,18 @@ die()  { err "$*"; exit 1; }
 while [[ $# -gt 0 ]]; do case "$1" in
     --dry-run)           DRY=1;;
     --allow-devtools)    ALLOW_DEVTOOLS=1;;
+    --no-lock-history)     LOCK_HISTORY=0;;
+    --allow-history-delete) LOCK_HISTORY=0;;
+    --no-block-private)    BLOCK_PRIVATE=0;;
+    --allow-private)       BLOCK_PRIVATE=0;;
     --no-ublock)         NO_UBLOCK=1;;
     --also-distribution) ALSO_DIST=1;;
     --webrtc)            [[ -n "${2:-}" ]] || die "--webrtc требует off|proxy|default"
                          WEBRTC="$2"; shift;;
     --webrtc=*)          WEBRTC="${1#*=}";;
+    --doh)               [[ -n "${2:-}" ]] || die "--doh требует on|off|auto"
+                         DOH="$2"; shift;;
+    --doh=*)             DOH="${1#*=}";;
     --allow-ext)         [[ -n "${2:-}" ]] || die "--allow-ext требует ID расширения"
                          ALLOW_EXTS+=("$2"); shift;;
     --allow-ext=*)       ALLOW_EXTS+=("${1#*=}");;
@@ -119,6 +136,26 @@ fi
 
 [[ "$(id -u)" -eq 0 ]] || die "нужен root. Запустите через sudo."
 run() { if [[ "$DRY" == "1" ]]; then dry "$*"; else "$@"; fi; }
+
+# --- есть ли на машине прокси -----------------------------------------------
+# Нужно только чтобы НЕ навредить: при обнаруженном прокси скрипт не лезет
+# в разрешение имён. Сами настройки прокси не читаются и не меняются.
+PROXY_FOUND="no"; PROXY_HINT=""
+for v in http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY; do
+    [[ -n "${!v:-}" ]] && { PROXY_FOUND="yes"; PROXY_HINT="переменная окружения ${v}"; break; }
+done
+if [[ "$PROXY_FOUND" == "no" && -r /etc/environment ]] \
+   && grep -qiE '^[[:space:]]*(http|https|all)_proxy=' /etc/environment; then
+    PROXY_FOUND="yes"; PROXY_HINT="/etc/environment"
+fi
+if [[ "$PROXY_FOUND" == "no" ]] && command -v gsettings >/dev/null 2>&1; then
+    m="$(gsettings get org.gnome.system.proxy mode 2>/dev/null | tr -d "'")"
+    [[ -n "$m" && "$m" != "none" ]] && { PROXY_FOUND="yes"; PROXY_HINT="GNOME (режим ${m})"; }
+fi
+if [[ "$PROXY_FOUND" == "no" && -r /etc/apt/apt.conf.d/proxy.conf ]]; then
+    PROXY_FOUND="yes"; PROXY_HINT="apt proxy.conf"
+fi
+[[ "$PROXY_FOUND" == "yes" ]] && info "обнаружен прокси: ${PROXY_HINT} — настройки прокси НЕ изменяются"
 
 info "установка Firefox: ${FF_KIND}"
 [[ "$FF_KIND" == "не найден" ]] && warn "Firefox не обнаружен — политики всё равно запишутся и сработают после установки"
@@ -190,6 +227,78 @@ else
     warn "исходного кода страницы, скорее всего, останется доступен."
 fi
 
+# --- История и приватный режим ----------------------------------------------
+# В Firefox НЕТ прямого аналога chrome-политики AllowDeletingBrowserHistory.
+# Эквивалент собирается из двух политик:
+#   DisableForgetButton  — убирает кнопку "Забыть" (быстрая очистка истории)
+#   DisablePrivateBrowsing — запрещает приватный режим (в нём история не пишется,
+#                            иначе замок на историю обходится в один клик)
+# Плюс важно НЕ включать SanitizeOnShutdown — иначе Firefox сам чистит историю
+# при закрытии, что противоположно задаче. Мы его и не задаём.
+#
+# ЧЕСТНО: как и в Chrome, это защита уровня интерфейса. Файл places.sqlite
+# лежит в профиле пользователя и доступен ему на запись — оператор с шеллом
+# может стереть историю, удалив файл. Настоящий неудаляемый журнал — только
+# внешний (на прокси или на уровне сети), не внутри браузера.
+if [[ "$LOCK_HISTORY" == "1" ]]; then
+    HISTORY_JSON='    "DisableForgetButton": true,
+'
+    info "кнопка быстрой очистки истории ('Забыть') будет убрана"
+    warn "это НЕ мешает удалить файл истории в профиле — гарантию даёт только внешний лог"
+else
+    HISTORY_JSON=""
+    info "удаление истории оставлено разрешённым (--no-lock-history)"
+fi
+
+if [[ "$BLOCK_PRIVATE" == "1" ]]; then
+    PRIVATE_JSON='    "DisablePrivateBrowsing": true,
+'
+    info "приватный режим будет отключён"
+else
+    PRIVATE_JSON=""
+    info "приватный режим оставлен доступным (--no-block-private)"
+    [[ "$LOCK_HISTORY" == "1" ]] && \
+        warn "замок на историю почти бесполезен без запрета приватного режима: в нём история не пишется"
+fi
+
+# --- DNS over HTTPS ---------------------------------------------------------
+# Единственная настройка в этом наборе, которая соприкасается с прокси: при
+# включённом DoH Firefox резолвит имена сам, по HTTPS к стороннему резолверу,
+# в обход того, как имена разрешаются в вашей сети. За прокси это способно
+# сломать внутренние имена и увести часть DNS мимо прокси, поэтому по
+# умолчанию (auto) при обнаруженном прокси DoH просто не трогается.
+case "$DOH" in
+  auto)
+    if [[ "$PROXY_FOUND" == "yes" ]]; then
+        DOH_BLOCK=""
+        info "DoH не настраивается: обнаружен прокси, разрешение имён оставлено вашей сети"
+    else
+        DOH_BLOCK='    "DNSOverHTTPS": {
+      "Enabled": true,
+      "Fallback": true,
+      "Locked": false
+    },
+'
+        info "DoH включён (прокси не обнаружен)"
+    fi
+    ;;
+  on)
+    DOH_BLOCK='    "DNSOverHTTPS": {
+      "Enabled": true,
+      "Fallback": true,
+      "Locked": false
+    },
+'
+    [[ "$PROXY_FOUND" == "yes" ]] && \
+        warn "DoH включён принудительно при работающем прокси — внутренние имена могут перестать резолвиться"
+    ;;
+  off)
+    DOH_BLOCK=""
+    info "DoH не настраивается (--doh off)"
+    ;;
+  *) die "--doh принимает on, off или auto (получено: ${DOH})";;
+esac
+
 # --- WebRTC -----------------------------------------------------------------
 # За прокси WebRTC — главный канал утечки реального IP: он собирает ICE-кандидаты
 # напрямую через STUN по UDP, минуя прокси, и отдаёт этот адрес любому сайту
@@ -250,12 +359,7 @@ ${DEVTOOLS_JSON}
       "Behavior": "reject-tracker-and-partition-foreign",
       "Locked": true
     },
-    "DNSOverHTTPS": {
-      "Enabled": true,
-      "Fallback": true,
-      "Locked": false
-    },
-
+${DOH_BLOCK}
     "ExtensionSettings": {
 ${EXT_JSON}
     },
@@ -265,7 +369,7 @@ ${EXT_JSON}
     "DisableTelemetry": true,
     "DisableFirefoxStudies": true,
     "DisableFirefoxAccounts": true,
-    "DisablePocket": true,
+${HISTORY_JSON}${PRIVATE_JSON}    "DisablePocket": true,
     "DisableFeedbackCommands": true,
     "DisableProfileImport": true,
     "DisableSetDesktopBackground": true,
@@ -331,6 +435,32 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 else
     warn "python3 нет — пропускаю проверку JSON"
+fi
+
+# --- страховка от прокси ----------------------------------------------------
+# Гарантия на уровне кода, а не обещания в комментарии: если в сгенерированный
+# файл когда-нибудь попадёт политика Proxy или параметр network.proxy.*,
+# скрипт откажется его записывать. Настройки прокси — ваши, не наши.
+if command -v python3 >/dev/null 2>&1; then
+    if ! printf '%s' "$POLICY_JSON" | python3 -c '
+import json, sys
+pol = json.load(sys.stdin).get("policies", {})
+bad = []
+if "Proxy" in pol:
+    bad.append("политика Proxy")
+for k in pol.get("Preferences", {}):
+    if k.startswith("network.proxy"):
+        bad.append("параметр " + k)
+if bad:
+    print("НАЙДЕНО: " + ", ".join(bad))
+    sys.exit(1)
+sys.exit(0)
+'; then
+        err "в файл политик попали настройки прокси — запись отменена."
+        err "Этот скрипт не должен менять параметры прокси. Проверьте изменения в коде."
+        exit 1
+    fi
+    ok "проверка пройдена: настройки прокси не затрагиваются"
 fi
 
 # --- запись -----------------------------------------------------------------
@@ -415,11 +545,14 @@ else
     printf '  uBlock Origin: не ставится (--no-ublock)\n'
 fi
 printf '  DevTools: %s\n' "$([[ "$ALLOW_DEVTOOLS" == "1" ]] && echo 'разрешены' || echo 'ЗАПРЕЩЕНЫ')"
+printf '  Очистка истории: %s\n' "$([[ "$LOCK_HISTORY" == "1" ]] && echo 'кнопка Забыть убрана' || echo 'разрешена')"
+printf '  Приватный режим: %s\n' "$([[ "$BLOCK_PRIVATE" == "1" ]] && echo 'отключён' || echo 'доступен')"
 case "$WEBRTC" in
   off)   printf '  WebRTC: отключён полностью\n';;
   proxy) printf '  WebRTC: только через прокси\n';;
   *)     printf '  WebRTC: не изменялся (по умолчанию)\n';;
 esac
+printf '  Прокси: не изменялся%s\n' "$([[ "$PROXY_FOUND" == "yes" ]] && echo " (обнаружен: ${PROXY_HINT})" || echo "")"
 printf '  Бэкап и откат: %s\n' "$ROLLBACK"
 echo
 printf '  %sПроверка:%s откройте about:policies — вкладка "Активные" покажет\n' "$C" "$R"
