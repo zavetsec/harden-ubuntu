@@ -229,20 +229,28 @@ if ! dpkg -s dnsmasq >/dev/null 2>&1; then
 else ok "dnsmasq уже установлен"; fi
 
 if [[ "$HAS_RESOLVED" == "yes" ]]; then
+    # Три директивы вместе, и все три обязательны:
+    #   DNSStubListener=no — освобождает 127.0.0.53:53 под dnsmasq
+    #   DNS=127.0.0.1      — resolved пересылает запросы в dnsmasq
+    #   Domains=~.         — ВСЕ домены гонит в этот DNS, а не напрямую к провайдеру
+    # Без DNS= и Domains= resolved перестаёт слушать stub, но запросы в dnsmasq
+    # не отправляет — и журнал остаётся пустым (это была бага ранней версии).
     if [[ "$DRY" == "1" ]]; then
-        dry "создал бы ${RESOLVED_DROPIN} с DNSStubListener=no"
-        dry "перезапустил бы systemd-resolved (освобождает 127.0.0.53:53)"
+        dry "создал бы ${RESOLVED_DROPIN}: DNSStubListener=no, DNS=127.0.0.1, Domains=~."
+        dry "перезапустил бы systemd-resolved (передаёт весь DNS в dnsmasq)"
     else
         mkdir -p "$(dirname "$RESOLVED_DROPIN")"
         cat > "$RESOLVED_DROPIN" <<EOF
 # ${MASK}
 [Resolve]
+DNS=127.0.0.1
+Domains=~.
 DNSStubListener=no
 EOF
         chmod 644 "$RESOLVED_DROPIN"
-        printf 'rm -f "%s"; systemctl restart systemd-resolved 2>/dev/null; echo "resolved stub restored"\n' "$RESOLVED_DROPIN" >> "$ROLLBACK"
+        printf 'rm -f "%s"; systemctl restart systemd-resolved 2>/dev/null; echo "resolved drop-in удалён, DNS вернулся к исходному"\n' "$RESOLVED_DROPIN" >> "$ROLLBACK"
         systemctl restart systemd-resolved 2>/dev/null || warn "не смог перезапустить resolved"
-        ok "DNS-заглушка resolved снята — порт 53 свободен для dnsmasq"
+        ok "resolved: stub снят, весь DNS направлен в dnsmasq (127.0.0.1)"
     fi
 fi
 
@@ -302,7 +310,12 @@ fi
 
 echo
 if verify_logging; then
-    STATUS="работает"
+    STATUS="работает (системный DNS)"
+    info "системный резолв логируется. Теперь проверьте БРАУЗЕР:"
+    info "  1) в Chrome должен быть DoH=off (chrome-policy-deploy.sh --doh off)"
+    info "  2) закройте Chrome полностью, откройте новый сайт"
+    info "  3) sudo $0 --tail  — и смотрите, появляются ли домены"
+    warn "если getent логируется, а браузер нет — почти всегда включён DoH в Chrome"
 else
     STATUS="НЕ подтверждено"
     warn "самопроверка не увидела запрос в логе за отведённое время."
