@@ -37,7 +37,7 @@ set -uo pipefail
 
 VER="1.0"
 DRY=0; WITH_CHROMIUM=0; INSTALL_CHROME=0; REMOVE=0; SHOW=0; ALLOW_DEVTOOLS=0; NO_UBLOCK=0
-WEBRTC="default"; LOCK_HISTORY=1; BLOCK_INCOGNITO=1; DOH_MODE="automatic"; BLOCK_PASSWORDS=1
+WEBRTC="default"; LOCK_HISTORY=1; BLOCK_INCOGNITO=1; DOH_MODE="automatic"; BLOCK_PASSWORDS=1; WITH_BITWARDEN=0
 EXTRA_EXTS=(); FORCE_EXTS=()
 
 CHROME_BASE="/etc/opt/chrome/policies"
@@ -53,6 +53,7 @@ ROLLBACK="${BACKUP_DIR}/rollback.sh"
 # ExtensionManifestV2Availability убрана ещё в Chrome 139, последние флаги —
 # в Chrome 151 (июль 2026). Ставить надо именно uBOL.
 UBLOCK_ID="ddkjiahejlhfcafbddmgiahcphecmpfh"
+BITWARDEN_ID="nngceckbapebfimnlniiiahkandclblb"  # облачный bitwarden.com — доп. настройка сервера не нужна
 UBLOCK_MV2_ID="cjpalhdlnbpafiamejdnhcphjbkeiagm"
 CWS_UPDATE_URL="https://clients2.google.com/service/update2/crx"
 DEFAULT_EXTS=("$UBLOCK_ID")
@@ -93,6 +94,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
     --doh=*)          DOH_MODE="${1#*=}";;
     --enable-doh)     DOH_MODE="automatic";;
     --allow-passwords) BLOCK_PASSWORDS=0;;
+    --with-bitwarden) WITH_BITWARDEN=1;;
     --remove)         REMOVE=1;;
     --show)           SHOW=1;;
     --no-color)       export NO_COLOR=1;;
@@ -168,14 +170,12 @@ if [[ ${#EXTRA_EXTS[@]} -gt 0 ]]; then EXTS+=("${EXTRA_EXTS[@]}"); fi
 for id in "${EXTS[@]}"; do
     [[ "$id" =~ ^[a-p]{32}$ ]] || warn "ID '${id}' не похож на ID расширения Chrome (32 буквы a-p)"
 done
-EXT_JSON=""
-for id in "${EXTS[@]}"; do EXT_JSON+="${EXT_JSON:+, }\"${id}\""; done
-
 # --- принудительная установка (ExtensionInstallForcelist) --------------------
 # Расширение ставится молча при первом запуске Chrome у КАЖДОГО пользователя
 # и не может быть отключено или удалено им.
 FORCED=()
 [[ "$NO_UBLOCK" == "1" ]] || FORCED+=("$UBLOCK_ID")
+[[ "$WITH_BITWARDEN" == "1" ]] && { FORCED+=("$BITWARDEN_ID"); EXTS+=("$BITWARDEN_ID"); }
 if [[ ${#FORCE_EXTS[@]} -gt 0 ]]; then FORCED+=("${FORCE_EXTS[@]}"); fi
 for id in "${FORCED[@]}"; do
     if [[ "$id" == "$UBLOCK_MV2_ID" ]]; then
@@ -186,8 +186,12 @@ for id in "${FORCED[@]}"; do
     fi
     [[ "$id" =~ ^[a-p]{32}$ ]] || warn "ID '${id}' не похож на ID расширения Chrome"
 done
+# allowlist строим ПОСЛЕ добавления bitwarden в EXTS
+EXT_JSON=""
+for id in "${EXTS[@]}"; do EXT_JSON+="${EXT_JSON:+, }\"${id}\""; done
 FORCE_JSON=""
 for id in "${FORCED[@]}"; do FORCE_JSON+="${FORCE_JSON:+, }\"${id};${CWS_UPDATE_URL}\""; done
+[[ "$WITH_BITWARDEN" == "1" ]] && info "расширение Bitwarden будет установлено принудительно (сервер bitwarden.com по умолчанию)"
 FORCE_BLOCK=""
 if [[ -n "$FORCE_JSON" ]]; then
     FORCE_BLOCK="  \"ExtensionInstallForcelist\": [${FORCE_JSON}],
@@ -463,7 +467,8 @@ fi
 printf '  Удаление истории: %s\n' "$([[ "$LOCK_HISTORY" == "1" ]] && echo 'запрещено в браузере' || echo 'разрешено')"
 printf '  Режим инкогнито: %s\n' "$([[ "$BLOCK_INCOGNITO" == "1" ]] && echo 'отключён' || echo 'доступен')"
 printf '  DoH: %s\n' "$([[ "$DOH_MODE" == "off" ]] && echo 'ВЫКЛЮЧЕН (DNS не шифруется, но логируется)' || echo "${DOH_MODE} (шифруется, безопаснее)")"
-printf '  Менеджер паролей: %s\n' "$([[ "$BLOCK_PASSWORDS" == "1" ]] && echo 'отключён' || echo 'доступен')"
+printf '  Менеджер паролей: %s\n' "$([[ "$BLOCK_PASSWORDS" == "1" ]] && echo 'отключён (встроенный)' || echo 'доступен')"
+[[ "$WITH_BITWARDEN" == "1" ]] && printf '  Bitwarden: установлен принудительно (bitwarden.com)\n'
 printf '  Бэкап и откат: %s\n' "$ROLLBACK"
 echo
 printf '  %sПроверка:%s откройте chrome://policy, нажмите Reload policies,\n' "$C" "$R"

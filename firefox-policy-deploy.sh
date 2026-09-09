@@ -25,6 +25,7 @@
 #    sudo ./firefox-policy-deploy.sh --no-lock-history  # разрешить чистить историю
 #    sudo ./firefox-policy-deploy.sh --no-block-private # разрешить приватный режим
 #    sudo ./firefox-policy-deploy.sh --allow-passwords  # разрешить менеджер паролей
+#    sudo ./firefox-policy-deploy.sh --with-bitwarden   # принудительно поставить расширение Bitwarden
 #
 #  ЧЕГО СКРИПТ НЕ ДЕЛАЕТ НИКОГДА:
 #    * не задаёт политику Proxy и не пишет ни одного параметра network.proxy.*
@@ -44,7 +45,7 @@ set -uo pipefail
 VER="1.0"
 DRY=0; REMOVE=0; SHOW=0; ALLOW_DEVTOOLS=0; NO_UBLOCK=0; ALSO_DIST=0
 LOCK_HISTORY=1; BLOCK_PRIVATE=1
-WEBRTC="default"; DOH="auto"; BLOCK_PASSWORDS=1
+WEBRTC="default"; DOH="auto"; BLOCK_PASSWORDS=1; WITH_BITWARDEN=0
 ALLOW_EXTS=(); FORCE_SPECS=()
 
 POLICY_DIR="/etc/firefox/policies"
@@ -57,6 +58,8 @@ ROLLBACK="${BACKUP_DIR}/rollback.sh"
 # идентификатором вида addon@example.com, и для принудительной установки
 # нужен прямой URL на .xpi.
 UBLOCK_ID="uBlock0@raymondhill.net"
+BITWARDEN_ID="446900e4-71c2-419f-a6a7-df9c091e268b"
+BITWARDEN_URL="https://addons.mozilla.org/firefox/downloads/latest/bitwarden-password-manager/latest.xpi"
 UBLOCK_URL="https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
@@ -79,6 +82,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
     --no-block-private)    BLOCK_PRIVATE=0;;
     --allow-private)       BLOCK_PRIVATE=0;;
     --allow-passwords)     BLOCK_PASSWORDS=0;;
+    --with-bitwarden)      WITH_BITWARDEN=1;;
     --no-ublock)         NO_UBLOCK=1;;
     --also-distribution) ALSO_DIST=1;;
     --webrtc)            [[ -n "${2:-}" ]] || die "--webrtc требует off|proxy|default"
@@ -184,6 +188,15 @@ if [[ "$NO_UBLOCK" != "1" ]]; then
       \"default_area\": \"navbar\",
       \"updates_disabled\": false
     }")
+fi
+
+if [[ "$WITH_BITWARDEN" == "1" ]]; then
+    EXT_ENTRIES+=("    \"${BITWARDEN_ID}\": {
+      \"installation_mode\": \"force_installed\",
+      \"install_url\": \"${BITWARDEN_URL}\",
+      \"default_area\": \"navbar\"
+    }")
+    info "расширение Bitwarden будет установлено принудительно (сервер bitwarden.com по умолчанию)"
 fi
 
 for spec in "${FORCE_SPECS[@]}"; do
@@ -563,7 +576,8 @@ fi
 printf '  DevTools: %s\n' "$([[ "$ALLOW_DEVTOOLS" == "1" ]] && echo 'разрешены' || echo 'ЗАПРЕЩЕНЫ')"
 printf '  Очистка истории: %s\n' "$([[ "$LOCK_HISTORY" == "1" ]] && echo 'кнопка Забыть убрана' || echo 'разрешена')"
 printf '  Приватный режим: %s\n' "$([[ "$BLOCK_PRIVATE" == "1" ]] && echo 'отключён' || echo 'доступен')"
-printf '  Менеджер паролей: %s\n' "$([[ "$BLOCK_PASSWORDS" == "1" ]] && echo 'отключён' || echo 'доступен')"
+printf '  Менеджер паролей: %s\n' "$([[ "$BLOCK_PASSWORDS" == "1" ]] && echo 'отключён (встроенный)' || echo 'доступен')"
+[[ "$WITH_BITWARDEN" == "1" ]] && printf '  Bitwarden: установлен принудительно (bitwarden.com)\n'
 case "$WEBRTC" in
   off)   printf '  WebRTC: отключён полностью\n';;
   proxy) printf '  WebRTC: только через прокси\n';;
