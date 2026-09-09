@@ -10,6 +10,8 @@
 #    * пишет managed/10-zavetsec-baseline.json с базовым набором политик
 #    * принудительно ставит всем uBlock Origin Lite (MV3) — разово, без участия
 #      пользователя; он не сможет его удалить
+#    * по умолчанию запрещает удаление истории и режим инкогнито
+#      (отключается ключами --no-lock-history / --no-block-incognito)
 #    * DevTools запрещены (DeveloperToolsAvailability: 2), view-source тоже
 #    * проверяет валидность JSON и права доступа
 #    * делает бэкап прежнего файла и генерирует скрипт отката
@@ -21,6 +23,8 @@
 #    sudo ./chrome-policy-deploy.sh --force-ext ID   # ПРИНУДИТЕЛЬНО поставить всем
 #    sudo ./chrome-policy-deploy.sh --no-ublock      # не ставить uBlock Origin Lite
 #    sudo ./chrome-policy-deploy.sh --webrtc proxy   # WebRTC только через прокси
+#    sudo ./chrome-policy-deploy.sh --no-lock-history    # разрешить чистить историю
+#    sudo ./chrome-policy-deploy.sh --no-block-incognito # разрешить режим инкогнито
 #    sudo ./chrome-policy-deploy.sh --allow-devtools # оставить DevTools включёнными
 #    sudo ./chrome-policy-deploy.sh --with-chromium  # продублировать для Chromium
 #    sudo ./chrome-policy-deploy.sh --install-chrome # + подключить репозиторий Google
@@ -31,7 +35,7 @@ set -uo pipefail
 
 VER="1.0"
 DRY=0; WITH_CHROMIUM=0; INSTALL_CHROME=0; REMOVE=0; SHOW=0; ALLOW_DEVTOOLS=0; NO_UBLOCK=0
-WEBRTC="default"
+WEBRTC="default"; LOCK_HISTORY=1; BLOCK_INCOGNITO=1
 EXTRA_EXTS=(); FORCE_EXTS=()
 
 CHROME_BASE="/etc/opt/chrome/policies"
@@ -79,6 +83,10 @@ while [[ $# -gt 0 ]]; do case "$1" in
     --webrtc)         [[ -n "${2:-}" ]] || die "--webrtc требует proxy|default"
                       WEBRTC="$2"; shift;;
     --webrtc=*)       WEBRTC="${1#*=}";;
+    --no-lock-history)   LOCK_HISTORY=0;;
+    --no-block-incognito) BLOCK_INCOGNITO=0;;
+    --allow-history-delete) LOCK_HISTORY=0;;
+    --allow-incognito)   BLOCK_INCOGNITO=0;;
     --remove)         REMOVE=1;;
     --show)           SHOW=1;;
     --no-color)       export NO_COLOR=1;;
@@ -195,6 +203,34 @@ else
     warn "если на машине кто-то разрабатывает или отлаживает веб — это ему сломает работу"
 fi
 
+# --- История и инкогнито ----------------------------------------------------
+# AllowDeletingBrowserHistory=false убирает удаление истории из интерфейса.
+# ВАЖНО: это защита уровня UI. Файл History лежит в профиле пользователя и
+# доступен ему на запись — оператор с шеллом может удалить файл или профиль
+# целиком. Настоящий неудаляемый журнал посещений даёт dns-query-log-deploy.sh
+# (root:root 600), а не эта политика. Здесь — только «в пару кликов не сотрёт».
+if [[ "$LOCK_HISTORY" == "1" ]]; then
+    HISTORY_BLOCK='  "AllowDeletingBrowserHistory": false,
+'
+    info "удаление истории через браузер будет запрещено"
+    warn "это НЕ мешает удалить файл History в профиле — надёжный лог даёт DNS-логгер"
+else
+    HISTORY_BLOCK=""
+    info "удаление истории оставлено разрешённым (--no-lock-history)"
+fi
+
+# Запрет инкогнито обязателен, если замыкаем историю: в инкогнито история
+# просто не пишется, и замок на её удаление теряет смысл.
+if [[ "$BLOCK_INCOGNITO" == "1" ]]; then
+    INCOGNITO_BLOCK='  "IncognitoModeAvailability": 1,
+'
+    info "режим инкогнито будет отключён"
+else
+    INCOGNITO_BLOCK=""
+    info "режим инкогнито оставлен доступным (--no-block-incognito)"
+    [[ "$LOCK_HISTORY" == "1" ]] &&         warn "замок на историю почти бесполезен без запрета инкогнито: в нём история не пишется"
+fi
+
 # --- WebRTC -----------------------------------------------------------------
 # ВАЖНО: в Chrome НЕТ политики, полностью убирающей WebRTC. RTCPeerConnection
 # остаётся доступен из JavaScript при любых настройках. Максимум, что даёт
@@ -228,7 +264,7 @@ POLICY_JSON=$(cat <<EOF
 {
   "_comment": "Managed by chrome-policy-deploy.sh — не редактируйте вручную, изменения перезапишутся",
 
-${WEBRTC_BLOCK}  "SafeBrowsingProtectionLevel": 2,
+${WEBRTC_BLOCK}${HISTORY_BLOCK}${INCOGNITO_BLOCK}  "SafeBrowsingProtectionLevel": 2,
   "DownloadRestrictions": 1,
   "SSLVersionMin": "tls1.2",
   "HttpsOnlyMode": "force_enabled",
@@ -370,6 +406,8 @@ printf '  DevTools: %s\n' "$([[ "$ALLOW_DEVTOOLS" == "1" ]] && echo 'разре�
 if [[ "$WEBRTC" != "default" ]]; then
     printf '  WebRTC: только через прокси (полностью Chrome отключать не умеет)\n'
 fi
+printf '  Удаление истории: %s\n' "$([[ "$LOCK_HISTORY" == "1" ]] && echo 'запрещено в браузере' || echo 'разрешено')"
+printf '  Режим инкогнито: %s\n' "$([[ "$BLOCK_INCOGNITO" == "1" ]] && echo 'отключён' || echo 'доступен')"
 printf '  Бэкап и откат: %s\n' "$ROLLBACK"
 echo
 printf '  %sПроверка:%s откройте chrome://policy, нажмите Reload policies,\n' "$C" "$R"
