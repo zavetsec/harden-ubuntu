@@ -25,6 +25,8 @@
 #    sudo ./chrome-policy-deploy.sh --webrtc proxy   # WebRTC только через прокси
 #    sudo ./chrome-policy-deploy.sh --no-lock-history    # разрешить чистить историю
 #    sudo ./chrome-policy-deploy.sh --no-block-incognito # разрешить режим инкогнито
+#    sudo ./chrome-policy-deploy.sh                  # DoH включён (по умолчанию, безопаснее)
+#    sudo ./chrome-policy-deploy.sh --doh off        # выкл DoH: только если нужен DNS-лог на этой машине
 #    sudo ./chrome-policy-deploy.sh --allow-devtools # оставить DevTools включёнными
 #    sudo ./chrome-policy-deploy.sh --with-chromium  # продублировать для Chromium
 #    sudo ./chrome-policy-deploy.sh --install-chrome # + подключить репозиторий Google
@@ -35,7 +37,7 @@ set -uo pipefail
 
 VER="1.0"
 DRY=0; WITH_CHROMIUM=0; INSTALL_CHROME=0; REMOVE=0; SHOW=0; ALLOW_DEVTOOLS=0; NO_UBLOCK=0
-WEBRTC="default"; LOCK_HISTORY=1; BLOCK_INCOGNITO=1
+WEBRTC="default"; LOCK_HISTORY=1; BLOCK_INCOGNITO=1; DOH_MODE="automatic"; BLOCK_PASSWORDS=1
 EXTRA_EXTS=(); FORCE_EXTS=()
 
 CHROME_BASE="/etc/opt/chrome/policies"
@@ -87,6 +89,10 @@ while [[ $# -gt 0 ]]; do case "$1" in
     --no-block-incognito) BLOCK_INCOGNITO=0;;
     --allow-history-delete) LOCK_HISTORY=0;;
     --allow-incognito)   BLOCK_INCOGNITO=0;;
+    --doh)            [[ -n "${2:-}" ]] || die "--doh требует off|automatic|secure"; DOH_MODE="$2"; shift;;
+    --doh=*)          DOH_MODE="${1#*=}";;
+    --enable-doh)     DOH_MODE="automatic";;
+    --allow-passwords) BLOCK_PASSWORDS=0;;
     --remove)         REMOVE=1;;
     --show)           SHOW=1;;
     --no-color)       export NO_COLOR=1;;
@@ -231,6 +237,56 @@ else
     [[ "$LOCK_HISTORY" == "1" ]] &&         warn "замок на историю почти бесполезен без запрета инкогнито: в нём история не пишется"
 fi
 
+# --- DNS over HTTPS ---------------------------------------------------------
+# По умолчанию automatic (безопаснее): Chrome шифрует DNS через DoH. Это скрывает
+# список доменов от наблюдателя на пути и защищает от подмены DNS-ответов.
+# ЦЕНА безопасности: браузерный DNS уходит в обход машины, поэтому DNS-лог
+# (dns-query-log-deploy.sh) по браузеру будет ПУСТЫМ.
+#
+# --doh off нужен ТОЛЬКО если вы сознательно логируете посещения на этой машине
+# и приняли, что DNS перестанет шифроваться. Если браузеры ходят через прокси —
+# лучше не выключать DoH, а логировать на стороне прокси.
+case "$DOH_MODE" in
+  off)
+    DOH_JSON='  "DnsOverHttpsMode": "off",
+'
+    warn "DoH ОТКЛЮЧЁН — включайте только если нужен DNS-лог на этой машине"
+    warn "цена: DNS-запросы браузера перестают шифроваться и становятся видны"
+    warn "на пути до резолвера; появляется риск подмены DNS-ответов"
+    ;;
+  automatic|secure)
+    DOH_JSON="  \"DnsOverHttpsMode\": \"${DOH_MODE}\",
+"
+    info "DoH включён (${DOH_MODE}) — DNS Chrome шифруется (безопаснее)"
+    [[ "$DOH_MODE" == "automatic" ]] && info "  (automatic: DoH при поддержке провайдером, иначе обычный DNS)"
+    ;;
+  *) die "--doh принимает off, automatic или secure (получено: ${DOH_MODE})";;
+esac
+
+# --- Пароли -----------------------------------------------------------------
+# PasswordManagerEnabled=false полностью выключает встроенный менеджер: браузер
+# не предлагает сохранять, не хранит, не автозаполняет пароли. Ранее сохранённые
+# перестают подставляться. Пользователь не может включить обратно.
+# PasswordSharingEnabled=false — запрет "поделиться паролем" (Chrome умеет).
+# Автозаполнение адресов и карт тоже выключено (ниже в JSON).
+#
+# ВАЖНО про "админ видит, пользователь нет": браузером это НЕ строится. Пароли
+# менеджера привязаны к профилю пользователя, между профилями не видны, а в
+# момент входа пароль всё равно оказывается в памяти вкладки. Для схемы
+# "админ владеет, оператор пользуется вслепую" нужен внешний менеджер
+# (Bitwarden/Vaultwarden) или SSO, а не политика браузера.
+if [[ "$BLOCK_PASSWORDS" == "1" ]]; then
+    PW_BLOCK='  "PasswordManagerEnabled": false,
+  "PasswordSharingEnabled": false,
+  "ImportSavedPasswords": false,
+'
+    info "встроенный менеджер паролей будет отключён для всех пользователей"
+    info "  (сохранённые в браузере пароли перестанут подставляться)"
+else
+    PW_BLOCK=""
+    info "встроенный менеджер паролей оставлен доступным (--allow-passwords)"
+fi
+
 # --- WebRTC -----------------------------------------------------------------
 # ВАЖНО: в Chrome НЕТ политики, полностью убирающей WebRTC. RTCPeerConnection
 # остаётся доступен из JavaScript при любых настройках. Максимум, что даёт
@@ -269,8 +325,7 @@ ${WEBRTC_BLOCK}${HISTORY_BLOCK}${INCOGNITO_BLOCK}  "SafeBrowsingProtectionLevel"
   "SSLVersionMin": "tls1.2",
   "HttpsOnlyMode": "force_enabled",
   "InsecureFormsWarningsEnabled": true,
-  "DnsOverHttpsMode": "automatic",
-${DEVTOOLS_BLOCK}
+${DOH_JSON}${DEVTOOLS_BLOCK}
   "ExtensionInstallBlocklist": ["*"],
   "ExtensionInstallAllowlist": [${EXT_JSON}],
 ${FORCE_BLOCK}  "ExtensionSettings": {
@@ -282,8 +337,7 @@ ${FORCE_BLOCK}  "ExtensionSettings": {
   "SyncDisabled": true,
   "MetricsReportingEnabled": false,
   "SearchSuggestEnabled": false,
-  "PasswordManagerEnabled": false,
-  "AutofillAddressEnabled": false,
+${PW_BLOCK}  "AutofillAddressEnabled": false,
   "AutofillCreditCardEnabled": false,
   "BackgroundModeEnabled": false,
   "RemoteAccessHostFirewallTraversal": false,
@@ -408,6 +462,8 @@ if [[ "$WEBRTC" != "default" ]]; then
 fi
 printf '  Удаление истории: %s\n' "$([[ "$LOCK_HISTORY" == "1" ]] && echo 'запрещено в браузере' || echo 'разрешено')"
 printf '  Режим инкогнито: %s\n' "$([[ "$BLOCK_INCOGNITO" == "1" ]] && echo 'отключён' || echo 'доступен')"
+printf '  DoH: %s\n' "$([[ "$DOH_MODE" == "off" ]] && echo 'ВЫКЛЮЧЕН (DNS не шифруется, но логируется)' || echo "${DOH_MODE} (шифруется, безопаснее)")"
+printf '  Менеджер паролей: %s\n' "$([[ "$BLOCK_PASSWORDS" == "1" ]] && echo 'отключён' || echo 'доступен')"
 printf '  Бэкап и откат: %s\n' "$ROLLBACK"
 echo
 printf '  %sПроверка:%s откройте chrome://policy, нажмите Reload policies,\n' "$C" "$R"

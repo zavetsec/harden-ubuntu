@@ -24,6 +24,7 @@
 #    sudo ./firefox-policy-deploy.sh --doh off          # не трогать DNS вообще
 #    sudo ./firefox-policy-deploy.sh --no-lock-history  # разрешить чистить историю
 #    sudo ./firefox-policy-deploy.sh --no-block-private # разрешить приватный режим
+#    sudo ./firefox-policy-deploy.sh --allow-passwords  # разрешить менеджер паролей
 #
 #  ЧЕГО СКРИПТ НЕ ДЕЛАЕТ НИКОГДА:
 #    * не задаёт политику Proxy и не пишет ни одного параметра network.proxy.*
@@ -43,7 +44,7 @@ set -uo pipefail
 VER="1.0"
 DRY=0; REMOVE=0; SHOW=0; ALLOW_DEVTOOLS=0; NO_UBLOCK=0; ALSO_DIST=0
 LOCK_HISTORY=1; BLOCK_PRIVATE=1
-WEBRTC="default"; DOH="auto"
+WEBRTC="default"; DOH="auto"; BLOCK_PASSWORDS=1
 ALLOW_EXTS=(); FORCE_SPECS=()
 
 POLICY_DIR="/etc/firefox/policies"
@@ -77,6 +78,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
     --allow-history-delete) LOCK_HISTORY=0;;
     --no-block-private)    BLOCK_PRIVATE=0;;
     --allow-private)       BLOCK_PRIVATE=0;;
+    --allow-passwords)     BLOCK_PASSWORDS=0;;
     --no-ublock)         NO_UBLOCK=1;;
     --also-distribution) ALSO_DIST=1;;
     --webrtc)            [[ -n "${2:-}" ]] || die "--webrtc требует off|proxy|default"
@@ -261,6 +263,23 @@ else
         warn "замок на историю почти бесполезен без запрета приватного режима: в нём история не пишется"
 fi
 
+# --- Пароли -----------------------------------------------------------------
+# PasswordManagerEnabled=false выключает встроенный менеджер целиком.
+# OfferToSaveLogins=false — не предлагать сохранять. DisablePasswordReveal —
+# убрать кнопку "показать" в сохранённых (защита от подглядывания, не более).
+# Как и в Chrome: схему "админ владеет, оператор пользуется вслепую" браузером
+# не построить — это внешний менеджер (Bitwarden) или SSO.
+if [[ "$BLOCK_PASSWORDS" == "1" ]]; then
+    PW_JSON='    "PasswordManagerEnabled": false,
+    "OfferToSaveLogins": false,
+    "DisablePasswordReveal": true,
+'
+    info "встроенный менеджер паролей Firefox будет отключён для всех"
+else
+    PW_JSON=""
+    info "встроенный менеджер паролей оставлен доступным (--allow-passwords)"
+fi
+
 # --- DNS over HTTPS ---------------------------------------------------------
 # Единственная настройка в этом наборе, которая соприкасается с прокси: при
 # включённом DoH Firefox резолвит имена сам, по HTTPS к стороннему резолверу,
@@ -374,10 +393,7 @@ ${HISTORY_JSON}${PRIVATE_JSON}    "DisablePocket": true,
     "DisableProfileImport": true,
     "DisableSetDesktopBackground": true,
     "DisableFormHistory": true,
-    "DisablePasswordReveal": true,
-    "PasswordManagerEnabled": false,
-    "OfferToSaveLogins": false,
-    "SearchSuggestEnabled": false,
+${PW_JSON}    "SearchSuggestEnabled": false,
 
     "Permissions": {
       "Location":      { "BlockNewRequests": true, "Locked": true },
@@ -547,6 +563,7 @@ fi
 printf '  DevTools: %s\n' "$([[ "$ALLOW_DEVTOOLS" == "1" ]] && echo 'разрешены' || echo 'ЗАПРЕЩЕНЫ')"
 printf '  Очистка истории: %s\n' "$([[ "$LOCK_HISTORY" == "1" ]] && echo 'кнопка Забыть убрана' || echo 'разрешена')"
 printf '  Приватный режим: %s\n' "$([[ "$BLOCK_PRIVATE" == "1" ]] && echo 'отключён' || echo 'доступен')"
+printf '  Менеджер паролей: %s\n' "$([[ "$BLOCK_PASSWORDS" == "1" ]] && echo 'отключён' || echo 'доступен')"
 case "$WEBRTC" in
   off)   printf '  WebRTC: отключён полностью\n';;
   proxy) printf '  WebRTC: только через прокси\n';;
